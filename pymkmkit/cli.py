@@ -1,4 +1,5 @@
 from pathlib import Path
+
 import click
 
 from pymkmkit.vasp_freq import parse_vasp_frequency, parse_vasp_optimization
@@ -9,6 +10,11 @@ from pymkmkit.yaml_writer import write_yaml
 def cli():
     """pymkmkit: DFT → microkinetic data tools"""
     pass
+
+
+def _ensure_output_dir(output):
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
 
 @cli.command("freq2yaml")
@@ -30,35 +36,15 @@ def cli():
         "Use when two identical adsorbates are present."
     ),
 )
-@click.option(
-    "--optimization",
-    is_flag=True,
-    help=(
-        "Parse OUTCAR as a regular geometry optimization and store "
-        "the final ionic step only."
-    ),
-)
-def freq2yaml(outcar, output, average_pairs, optimization):
-    """
-    Parse a VASP OUTCAR frequency calculation into YAML.
-    """
+def freq2yaml(outcar, output, average_pairs):
+    """Parse a VASP OUTCAR frequency calculation into YAML."""
 
-    output_path = Path(output)
+    _ensure_output_dir(output)
 
-    # create directory if needed
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if optimization:
-        if average_pairs:
-            raise click.UsageError(
-                "--average-pairs can only be used for frequency calculations."
-            )
-        data = parse_vasp_optimization(outcar)
-    else:
-        data = parse_vasp_frequency(
-            outcar,
-            average_pairs=average_pairs,
-        )
+    data = parse_vasp_frequency(
+        outcar,
+        average_pairs=average_pairs,
+    )
 
     write_yaml(data, output)
 
@@ -66,3 +52,26 @@ def freq2yaml(outcar, output, average_pairs, optimization):
 
     if average_pairs:
         click.echo("Sequential mode pairs averaged.")
+
+
+@cli.command("opt2yaml")
+@click.argument(
+    "outcar",
+    type=click.Path(exists=True, dir_okay=False)
+)
+@click.option(
+    "-o", "--output",
+    required=True,
+    type=click.Path(dir_okay=False),
+    help="Output YAML file (required)."
+)
+def opt2yaml(outcar, output):
+    """Parse a VASP OUTCAR geometry optimization into YAML."""
+
+    _ensure_output_dir(output)
+
+    data = parse_vasp_optimization(outcar)
+
+    write_yaml(data, output)
+
+    click.echo(f"YAML written to: {output}")

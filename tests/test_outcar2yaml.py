@@ -3,7 +3,11 @@ from pathlib import Path
 
 from ase.io import read
 
-from pymkmkit.vasp_freq import parse_vasp_frequency, parse_vasp_optimization
+from pymkmkit.vasp_freq import (
+    average_mode_pairs,
+    parse_vasp_frequency,
+    parse_vasp_optimization,
+)
 
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -92,3 +96,14 @@ def test_parse_outcar_as_optimization_uses_last_ionic_step(tmp_path):
     ]
     assert data["structure"]["coordinates_direct"] == expected_last_coords
     assert isinstance(data["energy"]["electronic"], float)
+
+
+def test_average_mode_pairs_also_pairs_imaginary_modes():
+    real_freqs = [100.0, 102.0, 150.0, 154.0]
+    imag_freqs = [-400.0, -396.0]
+
+    averaged_real, averaged_imag, note = average_mode_pairs(real_freqs, imag_freqs)
+
+    assert averaged_real == [101.0, 152.0]
+    assert averaged_imag == [-398.0]
+    assert note is None

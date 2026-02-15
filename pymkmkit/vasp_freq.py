@@ -207,7 +207,7 @@ def parse_vasp_frequency(outcar_path, average_pairs=False):
     pairing_note = None
 
     if average_pairs:
-        real_freqs, pairing_note = average_mode_pairs(real_freqs, imag_freqs)
+        real_freqs, imag_freqs, pairing_note = average_mode_pairs(real_freqs, imag_freqs)
 
     vibration_block = {
         "frequencies_cm-1": real_freqs,
@@ -311,9 +311,23 @@ def average_mode_pairs(real_freqs, imag_freqs):
                 "imaginary mode count != 1."
             )
 
-    averaged = [
+    averaged_real = [
         (real_freqs[i] + real_freqs[i + 1]) / 2.0
         for i in range(0, len(real_freqs), 2)
     ]
 
-    return averaged, note
+    if len(imag_freqs) % 2 == 1 and len(imag_freqs) != 1:
+        raise ValueError(
+            "Cannot pair-average: odd number of imaginary modes "
+            "that cannot be paired sequentially."
+        )
+
+    if len(imag_freqs) == 1:
+        averaged_imag = imag_freqs
+    else:
+        averaged_imag = [
+            (imag_freqs[i] + imag_freqs[i + 1]) / 2.0
+            for i in range(0, len(imag_freqs), 2)
+        ]
+
+    return averaged_real, averaged_imag, note

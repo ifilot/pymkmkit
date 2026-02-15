@@ -1,6 +1,6 @@
 pymkmkit:
   version: 0.1.0
-  generated: '2026-02-15T20:19:59.225583Z'
+  generated: '2026-02-15T20:50:44.993850Z'
 structure:
   formula: OH2
   n_atoms: 3
@@ -40,7 +40,7 @@ calculation:
   - PAW_PBE O 08Apr2002
   - PAW_PBE H 15Jun2001
 energy:
-  electronic: -14.21437711
+  electronic: -14.21880526
 vibrations:
   frequencies_cm-1:
   - 474.019108

@@ -1,6 +1,6 @@
 pymkmkit:
   version: 0.1.0
-  generated: '2026-02-15T20:39:05.779018Z'
+  generated: '2026-02-15T20:49:07.405680Z'
 structure:
   formula: Ru48C2H6
   n_atoms: 56
@@ -108,6 +108,5 @@ vibrations:
   - 38.6162865
   - 17.1364755
   imaginary_cm-1:
-  - -95.972059
-  - -108.332717
+  - -102.152388
   paired_modes_averaged: true

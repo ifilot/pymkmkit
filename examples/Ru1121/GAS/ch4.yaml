@@ -1,6 +1,6 @@
 pymkmkit:
   version: 0.1.0
-  generated: '2026-02-15T20:20:11.045574Z'
+  generated: '2026-02-15T20:50:43.222816Z'
 structure:
   formula: CH4
   n_atoms: 5
@@ -42,7 +42,7 @@ calculation:
   - PAW_PBE C 08Apr2002
   - PAW_PBE H 15Jun2001
 energy:
-  electronic: -24.02372597
+  electronic: -24.02366233
 vibrations:
   frequencies_cm-1:
   - 391.50091
