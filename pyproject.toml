@@ -1,0 +1,12 @@
+[project]
+name = "pymkmkit"
+version = "0.1.0"
+dependencies = [
+    "click", 
+    "pyyaml", 
+    "numpy",
+    "ase"
+]
+
+[project.scripts]
+pymkmkit = "pymkmkit.cli:cli"

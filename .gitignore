@@ -1,0 +1,70 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# virtual environments
+.venv/
+venv/
+env/
+
+# pytest
+.pytest_cache/
+
+# coverage
+.coverage
+htmlcov/
+
+# =========================
+# Build / packaging
+# =========================
+build/
+dist/
+*.egg-info/
+
+# =========================
+# Editors & OS files
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# =========================
+# Generated data
+# =========================
+
+# ignore generated YAML files
+*.yaml
+
+# BUT keep YAML test fixtures if you add them later
+!tests/data/*.yaml
+tests/data/OUTCAR*
+!tests/data/*.zip
+
+# =========================
+# VASP / DFT outputs
+# =========================
+
+# ignore large raw outputs
+OUTCAR
+vasprun.xml
+WAVECAR
+CHGCAR
+DOSCAR
+EIGENVAL
+PROCAR
+
+# ignore OUTCAR copies anywhere
+**/OUTCAR
+
+# =========================
+# Allow compressed test data
+# =========================
+
+# keep zipped test OUTCAR
+!tests/data/*.zip
