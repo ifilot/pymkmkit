@@ -1,7 +1,7 @@
 from pathlib import Path
 import click
 
-from pymkmkit.vasp_freq import parse_vasp_frequency
+from pymkmkit.vasp_freq import parse_vasp_frequency, parse_vasp_optimization
 from pymkmkit.yaml_writer import write_yaml
 
 
@@ -11,7 +11,7 @@ def cli():
     pass
 
 
-@cli.command()
+@cli.command("freq2yaml")
 @click.argument(
     "outcar",
     type=click.Path(exists=True, dir_okay=False)
@@ -30,7 +30,15 @@ def cli():
         "Use when two identical adsorbates are present."
     ),
 )
-def outcar2yaml(outcar, output, average_pairs):
+@click.option(
+    "--optimization",
+    is_flag=True,
+    help=(
+        "Parse OUTCAR as a regular geometry optimization and store "
+        "the final ionic step only."
+    ),
+)
+def freq2yaml(outcar, output, average_pairs, optimization):
     """
     Parse a VASP OUTCAR frequency calculation into YAML.
     """
@@ -40,10 +48,17 @@ def outcar2yaml(outcar, output, average_pairs):
     # create directory if needed
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    data = parse_vasp_frequency(
-        outcar,
-        average_pairs=average_pairs,
-    )
+    if optimization:
+        if average_pairs:
+            raise click.UsageError(
+                "--average-pairs can only be used for frequency calculations."
+            )
+        data = parse_vasp_optimization(outcar)
+    else:
+        data = parse_vasp_frequency(
+            outcar,
+            average_pairs=average_pairs,
+        )
 
     write_yaml(data, output)
 

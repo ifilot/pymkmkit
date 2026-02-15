@@ -74,6 +74,20 @@ def extract_potcar_info(text):
 # Vibrational frequencies
 # ============================================================
 
+
+
+def extract_ionic_energies(text):
+    energies = []
+
+    for line in text.splitlines():
+        if "energy  without entropy=" in line and "energy(sigma->0)" in line:
+            try:
+                energies.append(float(line.split("=")[-1].strip()))
+            except ValueError:
+                continue
+
+    return energies
+
 def extract_frequencies(text):
     """
     Extract vibrational frequencies from OUTCAR.
@@ -182,6 +196,11 @@ def parse_vasp_frequency(outcar_path, average_pairs=False):
     incar = extract_incar_settings(text)
     potcar = extract_potcar_info(text)
     real_freqs, imag_freqs = extract_frequencies(text)
+    ionic_energies = extract_ionic_energies(text)
+    if ionic_energies:
+        electronic_energy = ionic_energies[0]
+    else:
+        electronic_energy = float(atoms.get_potential_energy())
 
     # ---- vibrational processing ----
 
@@ -222,9 +241,47 @@ def parse_vasp_frequency(outcar_path, average_pairs=False):
             "potcar": potcar,
         },
         "energy": {
-            "electronic": float(atoms.get_potential_energy()),
+            "electronic": electronic_energy,
         },
         "vibrations": vibration_block,
+    }
+
+
+def parse_vasp_optimization(outcar_path):
+    path = Path(outcar_path)
+
+    if not path.exists():
+        raise FileNotFoundError(outcar_path)
+
+    text = path.read_text(errors="ignore")
+
+    # geometry optimizations should store the last ionic step
+    atoms = read(outcar_path, index=-1)
+
+    incar = extract_incar_settings(text)
+    potcar = extract_potcar_info(text)
+
+    return {
+        "pymkmkit": {
+            "version": get_version(),
+            "generated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        },
+        "structure": {
+            "formula": formula_from_atom_order(atoms),
+            "n_atoms": len(atoms),
+            "lattice_vectors": lattice_vectors(atoms),
+            "coordinates_direct": geometry_direct_strings(atoms),
+            "pbc": [bool(x) for x in atoms.pbc],
+        },
+        "calculation": {
+            "code": "VASP",
+            "type": "optimization",
+            "incar": incar,
+            "potcar": potcar,
+        },
+        "energy": {
+            "electronic": float(atoms.get_potential_energy()),
+        },
     }
 
 def average_mode_pairs(real_freqs, imag_freqs):

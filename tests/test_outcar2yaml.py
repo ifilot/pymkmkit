@@ -1,7 +1,9 @@
 import zipfile
 from pathlib import Path
 
-from pymkmkit.vasp_freq import parse_vasp_frequency
+from ase.io import read
+
+from pymkmkit.vasp_freq import parse_vasp_frequency, parse_vasp_optimization
 
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -12,6 +14,16 @@ def _extract_outcar(zip_name, tmp_path):
     with zipfile.ZipFile(zip_path, "r") as z:
         z.extractall(tmp_path)
     return tmp_path / zip_name.replace(".zip", "")
+
+
+def _outcar_sigma0_energies(outcar_path):
+    energies = []
+
+    for line in Path(outcar_path).read_text(errors="ignore").splitlines():
+        if "energy  without entropy=" in line and "energy(sigma->0)" in line:
+            energies.append(float(line.split("=")[-1].strip()))
+
+    return energies
 
 
 def test_parse_outcar_zip(tmp_path):
@@ -29,8 +41,11 @@ def test_parse_outcar_zip(tmp_path):
     # ensure coordinates exist
     assert len(data["structure"]["coordinates_direct"]) > 0
 
-    # energy should exist
+    # energy should match the first ionic step (not the last)
+    sigma0_energies = _outcar_sigma0_energies(outcar)
     assert isinstance(data["energy"]["electronic"], float)
+    assert data["energy"]["electronic"] == sigma0_energies[0]
+    assert data["energy"]["electronic"] != sigma0_energies[-1]
 
     # vibrations parsed
     assert len(data["vibrations"]["frequencies_cm-1"]) > 0
@@ -59,3 +74,21 @@ def test_parse_ru1121_c_ch_ts_with_pair_averaging_and_ts_note(tmp_path):
     assert vibrations["imaginary_cm-1"][0] < 0
     assert "Odd number of real modes" in vibrations["pairing_note"]
     assert "Dropped unpaired real mode" in vibrations["pairing_note"]
+
+
+def test_parse_outcar_as_optimization_uses_last_ionic_step(tmp_path):
+    outcar = _extract_outcar("OUTCAR_Ni311_C.zip", tmp_path)
+
+    data = parse_vasp_optimization(outcar)
+
+    last_atoms = read(outcar, index=-1)
+
+    assert data["calculation"]["type"] == "optimization"
+    assert "vibrations" not in data
+
+    expected_last_coords = [
+        f"{atom.symbol} " + " ".join(f"{x:.8f}" for x in pos)
+        for atom, pos in zip(last_atoms, last_atoms.get_scaled_positions())
+    ]
+    assert data["structure"]["coordinates_direct"] == expected_last_coords
+    assert isinstance(data["energy"]["electronic"], float)

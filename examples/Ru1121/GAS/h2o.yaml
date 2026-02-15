@@ -1,0 +1,55 @@
+pymkmkit:
+  version: 0.1.0
+  generated: '2026-02-15T20:19:59.225583Z'
+structure:
+  formula: OH2
+  n_atoms: 3
+  lattice_vectors:
+  - [10.0, 0.0, 0.0]
+  - [0.0, 10.0, 0.0]
+  - [0.0, 0.0, 10.0]
+  coordinates_direct:
+  - O 0.50000000 0.50000000 0.53006700
+  - H 0.50000000 0.57658300 0.47005900
+  - H 0.50000000 0.42341700 0.46805900
+  pbc:
+  - true
+  - true
+  - true
+calculation:
+  code: VASP
+  type: frequency
+  incar:
+    LREAL: F
+    PREC: medium
+    ENCUT: 400.0
+    ISMEAR: 1
+    SIGMA: 0.0005
+    EDIFF: 0.0001
+    EDIFFG: 0.0001
+    NSW: 73
+    ISIF: 2
+    IBRION: 5
+    ISPIN: 1
+    POTIM: 0.02
+    LASPH: F
+    GGA: PE
+    NFREE: 2
+    IVDW: 0
+  potcar:
+  - PAW_PBE O 08Apr2002
+  - PAW_PBE H 15Jun2001
+energy:
+  electronic: -14.21437711
+vibrations:
+  frequencies_cm-1:
+  - 474.019108
+  - 460.601626
+  - 196.692851
+  - 16.574111
+  - 2.94111
+  imaginary_cm-1:
+  - -0.066248
+  - -6.192967
+  - -7.277788
+  - -17.647621

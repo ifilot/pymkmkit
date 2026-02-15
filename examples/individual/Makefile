@@ -1,5 +1,5 @@
 # Directory containing example data
-DATA_DIR := ../tests/data
+DATA_DIR := ../../tests/data
 
 # Archives
 ZIP_NI := $(DATA_DIR)/OUTCAR_Ni311_C.zip
@@ -52,15 +52,15 @@ $(OUTCAR_TS): $(ZIP_TS)
 
 $(YAML_NI): $(OUTCAR_NI)
 	@echo "Generating YAML (Ni system)..."
-	pymkmkit outcar2yaml $< -o $@
+	pymkmkit freq2yaml $< -o $@
 
 $(YAML_RU): $(OUTCAR_RU)
 	@echo "Generating YAML (Ru double-adsorbate)..."
-	pymkmkit outcar2yaml $< -o $@ --average-pairs
+	pymkmkit freq2yaml $< -o $@ --average-pairs
 
 $(YAML_TS): $(OUTCAR_TS)
 	@echo "Generating YAML (Ru transition state)..."
-	pymkmkit outcar2yaml $< -o $@ --average-pairs
+	pymkmkit freq2yaml $< -o $@ --average-pairs
 
 # --------------------------------------------------
 # Show results
