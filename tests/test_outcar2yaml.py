@@ -109,8 +109,8 @@ def test_average_mode_pairs_also_pairs_imaginary_modes():
     assert note is None
 
 
-def test_parse_optimization_falls_back_when_ase_cannot_parse_positions():
-    outcar = DATA_DIR / "OUTCAR_Ru1121_empty"
+def test_parse_optimization_falls_back_when_ase_cannot_parse_positions(tmp_path):
+    outcar = _extract_outcar("OUTCAR_Ru1121_empty.zip", tmp_path)
 
     data = parse_vasp_optimization(outcar)
 
