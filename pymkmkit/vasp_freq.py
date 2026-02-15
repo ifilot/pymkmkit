@@ -1,5 +1,9 @@
 from pathlib import Path
+import re
+from ase import Atoms
 from ase.io import read
+from ase.io.formats import UnknownFileTypeError
+from ase.io import ParseError
 from pymkmkit.yaml_writer import InlineList
 from pymkmkit._version import get_version
 from datetime import datetime, timezone
@@ -87,6 +91,98 @@ def extract_ionic_energies(text):
                 continue
 
     return energies
+
+
+def extract_total_energies(text):
+    energies = []
+
+    for line in text.splitlines():
+        if "free  energy   TOTEN" in line:
+            try:
+                energies.append(float(line.split("=")[-1].split()[0]))
+            except ValueError:
+                continue
+
+    return energies
+
+
+def _parse_atomic_symbols(text):
+    counts = None
+    symbols = []
+
+    for line in text.splitlines():
+        if "ions per type" in line:
+            counts = [int(x) for x in re.findall(r"\d+", line)]
+        elif "TITEL" in line:
+            parts = line.split()
+            for part in reversed(parts):
+                cleaned = part.strip("_.,")
+                if cleaned and cleaned[0].isalpha():
+                    symbol = ''.join(ch for ch in cleaned if ch.isalpha())
+                    if symbol:
+                        symbols.append(symbol.capitalize())
+                    break
+
+    if not counts or not symbols:
+        raise ValueError("Could not parse species metadata from OUTCAR")
+
+    unique_symbols = []
+    for symbol in symbols:
+        if symbol not in unique_symbols:
+            unique_symbols.append(symbol)
+
+    if len(unique_symbols) < len(counts):
+        raise ValueError("Insufficient POTCAR species entries for ions per type")
+
+    expanded = []
+    for symbol, count in zip(unique_symbols, counts):
+        expanded.extend([symbol] * count)
+
+    return expanded
+
+
+def _parse_last_lattice_vectors(lines):
+    for i in range(len(lines) - 1, -1, -1):
+        if "direct lattice vectors" in lines[i]:
+            vectors = []
+            for j in range(i + 1, i + 4):
+                parts = lines[j].split()
+                vectors.append([float(parts[0]), float(parts[1]), float(parts[2])])
+            return vectors
+
+    raise ValueError("Could not parse lattice vectors from OUTCAR")
+
+
+def _parse_last_direct_positions(lines, n_atoms):
+    marker = "position of ions in fractional coordinates (direct lattice)"
+
+    for i in range(len(lines) - 1, -1, -1):
+        if marker in lines[i]:
+            positions = []
+            for j in range(i + 1, i + 1 + n_atoms):
+                parts = lines[j].split()
+                positions.append([float(parts[0]), float(parts[1]), float(parts[2])])
+            return positions
+
+    raise ValueError("Could not parse direct coordinates from OUTCAR")
+
+
+def _parse_atoms_from_outcar_text(text):
+    lines = text.splitlines()
+    symbols = _parse_atomic_symbols(text)
+    cell = _parse_last_lattice_vectors(lines)
+    scaled_positions = _parse_last_direct_positions(lines, len(symbols))
+
+    atoms = Atoms(symbols=symbols, cell=cell, pbc=True)
+    atoms.set_scaled_positions(scaled_positions)
+    return atoms
+
+
+def _read_last_optimization_atoms(outcar_path, text):
+    try:
+        return read(outcar_path, index=-1)
+    except (ParseError, UnknownFileTypeError, KeyError, ValueError):
+        return _parse_atoms_from_outcar_text(text)
 
 def extract_frequencies(text):
     """
@@ -256,10 +352,20 @@ def parse_vasp_optimization(outcar_path):
     text = path.read_text(errors="ignore")
 
     # geometry optimizations should store the last ionic step
-    atoms = read(outcar_path, index=-1)
+    atoms = _read_last_optimization_atoms(outcar_path, text)
 
     incar = extract_incar_settings(text)
     potcar = extract_potcar_info(text)
+
+    ionic_energies = extract_ionic_energies(text)
+    total_energies = extract_total_energies(text)
+
+    if ionic_energies:
+        electronic_energy = ionic_energies[-1]
+    elif total_energies:
+        electronic_energy = total_energies[-1]
+    else:
+        electronic_energy = float(atoms.get_potential_energy())
 
     return {
         "pymkmkit": {
@@ -280,7 +386,7 @@ def parse_vasp_optimization(outcar_path):
             "potcar": potcar,
         },
         "energy": {
-            "electronic": float(atoms.get_potential_energy()),
+            "electronic": electronic_energy,
         },
     }
 

@@ -107,3 +107,16 @@ def test_average_mode_pairs_also_pairs_imaginary_modes():
     assert averaged_real == [101.0, 152.0]
     assert averaged_imag == [-398.0]
     assert note is None
+
+
+def test_parse_optimization_falls_back_when_ase_cannot_parse_positions():
+    outcar = DATA_DIR / "OUTCAR_Ru1121_empty"
+
+    data = parse_vasp_optimization(outcar)
+
+    assert data["calculation"]["type"] == "optimization"
+    assert data["structure"]["formula"].startswith("Ru")
+    assert data["structure"]["n_atoms"] == len(data["structure"]["coordinates_direct"])
+
+    sigma0_energies = _outcar_sigma0_energies(outcar)
+    assert data["energy"]["electronic"] == sigma0_energies[-1]
