@@ -2,7 +2,7 @@ from pathlib import Path
 from ase.io import read
 from pymkmkit.yaml_writer import InlineList
 from pymkmkit._version import get_version
-from datetime import datetime
+from datetime import datetime, timezone
 
 # ============================================================
 # INCAR extraction (physics-relevant parameters only)
@@ -206,7 +206,7 @@ def parse_vasp_frequency(outcar_path, average_pairs=False):
     return {
         "pymkmkit": {
             "version": get_version(),
-            "generated": datetime.utcnow().isoformat() + "Z",
+            "generated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         },
         "structure": {
             "formula": formula_from_atom_order(atoms),
