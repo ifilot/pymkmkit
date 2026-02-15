@@ -1,5 +1,7 @@
 # PyMKMKit
 
+[![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
+
 Python-based MicroKinetic Modelling Kit
 
 ## Installing
