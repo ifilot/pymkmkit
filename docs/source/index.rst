@@ -1,14 +1,13 @@
-# PyMKMKit
+PyMKMKit documentation
+======================
 
-[![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
+Welcome to the PyMKMKit documentation.
 
-Python-based MicroKinetic Modelling Kit
+.. toctree::
+   :maxdepth: 2
+   :caption: Contents
 
-> [!IMPORTANT]
-> This toolkit is still work in progress. It is not recommended to use this tool
-> for production purposes - yet.
-
-## Purpose
+   installation
 
 Within ab initio microkinetic modeling, chemokinetic networks are constructed
 using electronic structure calculations, typically periodic density functional
@@ -39,18 +38,3 @@ electronic energy, vibrational frequency data, structural geometry, and
 calculation parameters. An overarching YAML file then references these state
 files and defines the microkinetic network through the specification of the
 elementary reaction steps.
-
-## Installing
-
-Clone this repository and install using. It is recommended to use PyMKMKit
-in a virtual environment.
-
-```bash
-pip install .
-```
-
-To test the kit:
-
-```bash
-python -m pytest -s
-```
