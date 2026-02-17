@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import numpy as np
 from ase import Atoms
 from ase.io import read
 from ase.io.formats import UnknownFileTypeError
@@ -212,10 +213,11 @@ def extract_frequencies(text):
 
             last_index = index
 
-            try:
-                value = float(parts[-2])  # cm-1 column
-            except Exception:
+            match = re.search(r"([-+]?\d*\.?\d+)\s+cm-1", line)
+            if not match:
                 continue
+
+            value = float(match.group(1))
 
             if "f/i=" in line:
                 imaginary.append(-abs(value))
@@ -223,6 +225,100 @@ def extract_frequencies(text):
                 real.append(value)
 
     return real, imaginary
+
+
+_DOF_LABEL_RE = re.compile(r"^(\d+)([XYZ])$")
+
+
+def extract_perturbed_hessian(text):
+    """Extract the perturbed Hessian block from OUTCAR.
+
+    Returns
+    -------
+    tuple[list[str], list[list[float]]] | (None, None)
+        DOF labels and Hessian matrix values for the perturbed coordinates.
+    """
+    lines = text.splitlines()
+    start = None
+
+    for idx, line in enumerate(lines):
+        if "SECOND DERIVATIVES (NOT SYMMETRIZED)" in line:
+            start = idx
+
+    if start is None:
+        return None, None
+
+    row_order = []
+    values = {}
+    i = start + 1
+
+    while i < len(lines):
+        line = lines[i]
+
+        if "Eigenvectors and eigenvalues of the dynamical matrix" in line:
+            break
+
+        labels = [tok for tok in line.split() if _DOF_LABEL_RE.match(tok)]
+        if not labels:
+            i += 1
+            continue
+
+        i += 1
+        while i < len(lines):
+            row_line = lines[i]
+
+            if not row_line.strip():
+                break
+
+            parts = row_line.split()
+            if not parts or not _DOF_LABEL_RE.match(parts[0]):
+                break
+
+            row_label = parts[0]
+            numbers = parts[1:1 + len(labels)]
+
+            if len(numbers) != len(labels):
+                raise ValueError("Malformed Hessian block in OUTCAR")
+
+            if row_label not in row_order:
+                row_order.append(row_label)
+                values[row_label] = {}
+
+            for col_label, value in zip(labels, numbers):
+                values[row_label][col_label] = float(value)
+
+            i += 1
+
+    if not row_order:
+        return None, None
+
+    matrix = [
+        [values[row][col] for col in row_order]
+        for row in row_order
+    ]
+    return row_order, matrix
+
+
+def frequencies_from_partial_hessian(dof_labels, hessian_matrix, atoms):
+    """Recover frequencies (cm-1) from a partial Hessian for perturbed DOFs."""
+    dof_masses = []
+    for label in dof_labels:
+        match = _DOF_LABEL_RE.match(label)
+        if not match:
+            raise ValueError(f"Invalid DOF label: {label}")
+        atom_index = int(match.group(1)) - 1
+        dof_masses.append(atoms[atom_index].mass)
+
+    hessian = np.array(hessian_matrix, dtype=float)
+    mass = np.sqrt(np.outer(dof_masses, dof_masses))
+    dynamical = -hessian / mass
+    eigenvals = np.linalg.eigvalsh(dynamical)
+
+    # Conversion: sqrt(eV/amu)/Ang -> cm-1
+    factor_cm = 521.4708983725064
+    frequencies = factor_cm * np.sqrt(np.maximum(eigenvals, 0.0))
+
+    return sorted((float(v) for v in frequencies), reverse=True)
 
 # ============================================================
 # Structure utilities
@@ -292,6 +388,7 @@ def parse_vasp_frequency(outcar_path, average_pairs=False):
     incar = extract_incar_settings(text)
     potcar = extract_potcar_info(text)
     real_freqs, imag_freqs = extract_frequencies(text)
+    hessian_dofs, hessian_matrix = extract_perturbed_hessian(text)
     ionic_energies = extract_ionic_energies(text)
     if ionic_energies:
         electronic_energy = ionic_energies[0]
@@ -309,6 +406,12 @@ def parse_vasp_frequency(outcar_path, average_pairs=False):
         "frequencies_cm-1": real_freqs,
         "imaginary_cm-1": imag_freqs if imag_freqs else None,
     }
+
+    if hessian_dofs and hessian_matrix:
+        vibration_block["partial_hessian"] = {
+            "dof_labels": hessian_dofs,
+            "matrix": hessian_matrix,
+        }
 
     if average_pairs:
         vibration_block["paired_modes_averaged"] = True

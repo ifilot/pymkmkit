@@ -1,13 +1,17 @@
 import zipfile
 from pathlib import Path
 
+import yaml
+import pytest
 from ase.io import read
 
 from pymkmkit.vasp_freq import (
     average_mode_pairs,
+    frequencies_from_partial_hessian,
     parse_vasp_frequency,
     parse_vasp_optimization,
 )
+from pymkmkit.yaml_writer import write_yaml
 
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -53,6 +57,7 @@ def test_parse_outcar_zip(tmp_path):
 
     # vibrations parsed
     assert len(data["vibrations"]["frequencies_cm-1"]) > 0
+    assert "partial_hessian" in data["vibrations"]
 
 
 def test_parse_ru1121_c_with_pair_averaging(tmp_path):
@@ -120,3 +125,26 @@ def test_parse_optimization_falls_back_when_ase_cannot_parse_positions(tmp_path)
 
     sigma0_energies = _outcar_sigma0_energies(outcar)
     assert data["energy"]["electronic"] == sigma0_energies[-1]
+
+
+def test_partial_hessian_roundtrip_recovers_vasp_frequencies(tmp_path):
+    outcar = _extract_outcar("OUTCAR_Ni311_C.zip", tmp_path)
+
+    data = parse_vasp_frequency(outcar)
+    yaml_path = tmp_path / "freq.yaml"
+    write_yaml(data, yaml_path)
+
+    loaded = yaml.safe_load(yaml_path.read_text())
+    partial_hessian = loaded["vibrations"]["partial_hessian"]
+
+    recovered = frequencies_from_partial_hessian(
+        partial_hessian["dof_labels"],
+        partial_hessian["matrix"],
+        read(outcar),
+    )
+
+    reported = sorted(loaded["vibrations"]["frequencies_cm-1"], reverse=True)
+    assert len(recovered) == len(reported)
+
+    for rec, rep in zip(recovered, reported):
+        assert rec == pytest.approx(rep, abs=2.0)
