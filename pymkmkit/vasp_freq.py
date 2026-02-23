@@ -189,9 +189,8 @@ def extract_frequencies(text):
     """
     Extract vibrational frequencies from OUTCAR.
 
-    VASP prints the frequency list twice.
-    We detect the repetition by checking when the
-    mode index restarts at 1 and stop reading.
+    VASP prints the frequency list twice. We detect the repetition by checking
+    when the mode index restarts at 1 and stop reading.
     """
     real = []
     imaginary = []

@@ -3,30 +3,57 @@ pymkmkit:
 stable_states:
   - name: empty
     file: ISFS/empty.yaml
-  - name: CO
+  - name: CO*
     file: ISFS/co.yaml
-  - name: C
+  - name: C*
     file: ISFS/c.yaml
-  - name: O
+  - name: O*
     file: ISFS/o.yaml
-  - name: CH
+  - name: CH*
     file: ISFS/ch.yaml
-  - name: H
+  - name: CH2*
+    file: ISFS/ch2.yaml
+  - name: CH3*
+    file: ISFS/ch3.yaml
+  - name: H*
     file: ISFS/h.yaml
+  - name: OH*
+    file: ISFS/oh.yaml
+  - name: H2O*
+    file: ISFS/h2o.yaml
+  - name: CH4
+    file: GAS/ch4.yaml
+  - name: CO
+    file: GAS/co.yaml
+  - name: H2
+    file: GAS/h2.yaml
+  - name: H2O
+    file: GAS/h2o.yaml
 transition_states:
   - name: CO_diss
     file: TS/co_diss.yaml
   - name: C_hydr
     file: TS/c_hydr.yaml
+  - name: CH_hydr
+    file: TS/ch_hydr.yaml
+  - name: CH2_hydr
+    file: TS/ch2_hydr.yaml
+  - name: CH3_hydr
+    file: TS/ch3_hydr.yaml
+  - name: O_hydr
+    file: TS/o_hydr.yaml
+  - name: OH_hydr
+    file: TS/oh_hydr.yaml
 network:
   - name: CO dissociation
+    type: surf
     reaction: CO* + * => C* + O*
     forward:
       ts:
         - name: CO_diss
           stoichiometry: 1
       is: 
-        - name: CO
+        - name: CO*
           stoichiometry: 1
       normalization: 2
     backward:
@@ -36,12 +63,13 @@ network:
         - name: empty
           stoichiometry: 1
       is: 
-        - name: C
+        - name: C*
           stoichiometry: 1
-        - name: O
+        - name: O*
           stoichiometry: 1
       normalization: 2
   - name: C hydrogenation
+    type: surf
     reaction: C* + H* => CH* + *
     forward:
       ts:
@@ -50,15 +78,146 @@ network:
         - name: empty
           stoichiometry: 1
       is: 
-        - name: C
+        - name: C*
           stoichiometry: 1
-        - name: H
+        - name: H*
           stoichiometry: 1
+      normalization: 2
     backward:
       ts:
         - name: C_hydr
           stoichiometry: 1
       is: 
-        - name: CH
+        - name: CH*
           stoichiometry: 1        
       normalization: 2
+  - name: CH hydrogenation
+    type: surf
+    reaction: CH* + H* => CH2* + *
+    forward:
+      ts:
+        - name: CH_hydr
+          stoichiometry: 1
+        - name: empty
+          stoichiometry: 1
+      is: 
+        - name: CH*
+          stoichiometry: 1
+        - name: H*
+          stoichiometry: 1
+      normalization: 2
+    backward:
+      ts:
+        - name: CH_hydr
+          stoichiometry: 1
+      is: 
+        - name: CH2*
+          stoichiometry: 1        
+      normalization: 2
+  - name: CH2 hydrogenation
+    type: surf
+    reaction: CH2* + H* => CH3* + *
+    forward:
+      ts:
+        - name: CH2_hydr
+          stoichiometry: 1
+        - name: empty
+          stoichiometry: 1
+      is: 
+        - name: CH2*
+          stoichiometry: 1
+        - name: H*
+          stoichiometry: 1
+      normalization: 2
+    backward:
+      ts:
+        - name: CH2_hydr
+          stoichiometry: 1
+      is: 
+        - name: CH3*
+          stoichiometry: 1        
+      normalization: 2
+  - name: CH3 hydrogenation
+    type: surf
+    reaction: CH3* + H* => CH4 + 2*
+    forward:
+      ts:
+        - name: CH3_hydr
+          stoichiometry: 1
+        - name: empty
+          stoichiometry: 1
+      is: 
+        - name: CH3*
+          stoichiometry: 1
+        - name: H*
+          stoichiometry: 1
+      normalization: 2
+    backward:
+      ts:
+        - name: CH3_hydr
+          stoichiometry: 1
+      is: 
+        - name: CH4
+          stoichiometry: 2
+        - name: empty
+          stoichiometry: 1
+      normalization: 2
+  - name: O hydrogenation
+    type: surf
+    reaction: O* + H* => OH* + *
+    forward:
+      ts:
+        - name: O_hydr
+          stoichiometry: 1
+        - name: empty
+          stoichiometry: 1
+      is: 
+        - name: O*
+          stoichiometry: 1
+        - name: H*
+          stoichiometry: 1
+      normalization: 2
+    backward:
+      ts:
+        - name: O_hydr
+          stoichiometry: 1
+      is: 
+        - name: OH*
+          stoichiometry: 1        
+      normalization: 2
+  - name: OH hydrogenation
+    type: surf
+    reaction: OH* + H* => H2O* + *
+    type: surf
+    forward:
+      ts:
+        - name: OH_hydr
+          stoichiometry: 1
+        - name: empty
+          stoichiometry: 1
+      is: 
+        - name: OH*
+          stoichiometry: 1
+        - name: H*
+          stoichiometry: 1
+      normalization: 2
+    backward:
+      ts:
+        - name: OH_hydr
+          stoichiometry: 1
+      is: 
+        - name: H2O*
+          stoichiometry: 1        
+      normalization: 2
+  - name: CO adsorption
+    type: ads
+    reaction: CO + * => CO*
+    is:
+      - name: CO
+        stoichiometry: 2
+      - name: empty
+        stoichiometry: 1
+    fs: 
+      - name: CO*
+        stoichiometry: 1
+    normalization: 2

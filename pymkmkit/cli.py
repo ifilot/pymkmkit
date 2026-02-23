@@ -90,11 +90,7 @@ def read_network_command(network_file):
 
     for step in steps:
         click.echo(f"Reaction: {step.reaction}")
-        click.echo(f"  Forward equation: {step.forward_equation}")
-        click.echo(f"  Forward electronic barrier: {step.forward_barrier_electronic:.6f}")
-        click.echo(f"  Forward ZPE correction: {step.forward_zpe_correction:.6f}")
-        click.echo(f"  Forward total barrier: {step.forward_total_barrier:.6f}")
-        click.echo(f"  Reverse equation: {step.reverse_equation}")
-        click.echo(f"  Reverse electronic barrier: {step.reverse_barrier_electronic:.6f}")
-        click.echo(f"  Reverse ZPE correction: {step.reverse_zpe_correction:.6f}")
-        click.echo(f"  Reverse total barrier: {step.reverse_total_barrier:.6f}")
+        #click.echo(f"  Forward equation: {step.forward_equation}")
+        click.echo(f"  Forward barrier: {step.forward_total_barrier:.6f} eV (inc. ZPE-corr: {step.forward_zpe_correction:.6f})")
+        #click.echo(f"  Reverse equation: {step.reverse_equation}")
+        click.echo(f"  Reverse barrier: {step.reverse_total_barrier:.6f} eV (inc. ZPE-corr: {step.reverse_zpe_correction:.6f})")
