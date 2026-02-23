@@ -1,0 +1,37 @@
+pymkmkit:
+  version: 0.1.0
+stable_states:
+  - name: empty
+    file: ISFS/empty.yaml
+  - name: CO
+    file: ISFS/co.yaml
+  - name: C
+    file: ISFS/c.yaml
+  - name: O
+    file: ISFS/o.yaml
+transition_states:
+  - name: CO_diss
+    file: TS/co_diss
+network:
+  - name: CO dissociation
+    reaction: CO* + * => C* + O*
+    forward:
+      ts:
+        - name: CO_diss
+          stoichiometry: 1
+      is: 
+        - name: CO
+          stoichiometry: 1
+      normalization: 2
+    backward:
+      ts:
+        - name: CO_diss
+          stoichiometry: 1
+        - name: empty
+          stoichiometry: 1
+      is: 
+        - name: C
+          stoichiometry: 1
+        - name: O
+          stoichiometry: 1
+      normalization: 2
