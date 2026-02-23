@@ -2,7 +2,7 @@ from pathlib import Path
 
 import click
 
-from pymkmkit.network_reader import read_network
+from pymkmkit.network_reader import evaluate_paths, read_network
 from pymkmkit.vasp_freq import parse_vasp_frequency, parse_vasp_optimization
 from pymkmkit.yaml_writer import write_yaml
 
@@ -13,11 +13,18 @@ def cli():
     pass
 
 
+# ---------------------------------------------------------------------------
+# Shared CLI utilities
+# ---------------------------------------------------------------------------
 def _ensure_output_dir(output):
+    """Ensure the target output directory exists before writing files."""
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
 
+# ---------------------------------------------------------------------------
+# OUTCAR parsers
+# ---------------------------------------------------------------------------
 @cli.command("freq2yaml")
 @click.argument(
     "outcar",
@@ -78,6 +85,9 @@ def opt2yaml(outcar, output):
     click.echo(f"YAML written to: {output}")
 
 
+# ---------------------------------------------------------------------------
+# Network analysis
+# ---------------------------------------------------------------------------
 @cli.command("read_network")
 @click.argument(
     "network_file",
@@ -108,3 +118,17 @@ def read_network_command(network_file):
             f"{step.reverse_total_barrier:.6f} eV "
             f"(inc. ZPE-corr: {step.reverse_zpe_correction:.6f})"
         )
+
+
+@cli.command("evaluate_paths")
+@click.argument(
+    "network_file",
+    type=click.Path(exists=True, dir_okay=False)
+)
+def evaluate_paths_command(network_file):
+    """Read a network YAML file and print total reaction energy for each path."""
+
+    paths = evaluate_paths(network_file)
+
+    for path in paths:
+        click.echo(f"Path {path.name}: {path.total_reaction_energy:.6f} eV")

@@ -30,6 +30,15 @@ class ElementaryStep:
     reverse_zpe_correction: float
     forward_total_barrier: float
     reverse_total_barrier: float
+    reaction_heat_electronic: float
+    reaction_heat_zpe_correction: float
+    reaction_heat_total: float
+
+
+@dataclass(frozen=True)
+class ReactionPath:
+    name: str
+    total_reaction_energy: float
 
 
 def _resolve_state_file(base_dir: Path, state_file: str) -> Path:
@@ -265,6 +274,9 @@ def read_network(network_file: str | Path) -> list[ElementaryStep]:
             reverse_zpe = 0.0
             reverse_total = 0.0
             reverse_eq = "N/A"
+            reaction_heat_el = forward_el
+            reaction_heat_zpe = forward_zpe
+            reaction_heat_total = forward_total
         else:
             forward_data = step.get("forward", {})
             backward_data = step.get("backward", {})
@@ -281,6 +293,9 @@ def read_network(network_file: str | Path) -> list[ElementaryStep]:
                 reverse_total,
                 reverse_eq,
             ) = _compute_barrier(backward_data, states)
+            reaction_heat_el = forward_el - reverse_el
+            reaction_heat_zpe = forward_zpe - reverse_zpe
+            reaction_heat_total = forward_total - reverse_total
 
         steps.append(
             ElementaryStep(
@@ -295,7 +310,51 @@ def read_network(network_file: str | Path) -> list[ElementaryStep]:
                 reverse_zpe_correction=reverse_zpe,
                 forward_total_barrier=forward_total,
                 reverse_total_barrier=reverse_total,
+                reaction_heat_electronic=reaction_heat_el,
+                reaction_heat_zpe_correction=reaction_heat_zpe,
+                reaction_heat_total=reaction_heat_total,
             )
         )
 
     return steps
+
+
+def evaluate_paths(network_file: str | Path) -> list[ReactionPath]:
+    network_path = Path(network_file).resolve()
+    with network_path.open("r", encoding="utf-8") as stream:
+        network_data = yaml.safe_load(stream) or {}
+
+    steps = read_network(network_file)
+    steps_by_name = {step.name: step for step in steps}
+
+    paths: list[ReactionPath] = []
+    for path in network_data.get("paths", []):
+        path_name = path.get("name")
+        if not path_name:
+            raise ValueError(f"Invalid path entry without a name: {path}")
+
+        total_reaction_energy = 0.0
+        for path_step in path.get("steps", []):
+            step_name = path_step.get("name")
+            if step_name not in steps_by_name:
+                raise ValueError(f"Unknown step '{step_name}' referenced in path '{path_name}'")
+
+            factor = path_step.get("factor", 1)
+            try:
+                factor_value = float(factor)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid factor for step '{step_name}' in path '{path_name}': {factor}"
+                ) from exc
+
+            step_heat = steps_by_name[step_name].reaction_heat_total
+            total_reaction_energy += factor_value * step_heat
+
+        paths.append(
+            ReactionPath(
+                name=path_name,
+                total_reaction_energy=total_reaction_energy,
+            )
+        )
+
+    return paths

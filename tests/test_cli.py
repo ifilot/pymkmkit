@@ -352,3 +352,109 @@ network:
     assert result.exit_code == 0
     assert "Reaction: GAS + * => ADS*" in result.output
     assert "Adsorption heat: -0.281402 eV (inc. ZPE-corr: 0.018598)" in result.output
+
+
+def test_evaluate_paths_cli_sums_reaction_heats(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    is_file = states_dir / "is.yaml"
+    ts_file = states_dir / "ts.yaml"
+    fs_file = states_dir / "fs.yaml"
+    gas_file = states_dir / "gas.yaml"
+
+    is_file.write_text(
+        """
+energy:
+  electronic: -1.0
+vibrations:
+  frequencies_cm-1: [500.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    ts_file.write_text(
+        """
+energy:
+  electronic: 0.0
+vibrations:
+  frequencies_cm-1: [1000.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    fs_file.write_text(
+        """
+energy:
+  electronic: -2.0
+vibrations:
+  frequencies_cm-1: [200.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    gas_file.write_text(
+        """
+energy:
+  electronic: -0.2
+vibrations:
+  frequencies_cm-1: [100.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: IS
+    file: states/is.yaml
+  - name: FS
+    file: states/fs.yaml
+  - name: GAS
+    file: states/gas.yaml
+transition_states:
+  - name: TS
+    file: states/ts.yaml
+network:
+  - name: surface_step
+    reaction: IS* => FS*
+    forward:
+      ts:
+        - name: TS
+      is:
+        - name: IS
+    backward:
+      ts:
+        - name: TS
+      is:
+        - name: FS
+  - name: adsorption_step
+    type: ads
+    reaction: GAS + * => IS*
+    is:
+      - name: GAS
+      - name: FS
+    fs:
+      - name: IS
+paths:
+  - name: combined
+    steps:
+      - name: surface_step
+      - name: adsorption_step
+        factor: 2
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["evaluate_paths", str(network_file)])
+
+    assert result.exit_code == 0
+    assert "Path combined: 1.406199 eV" in result.output
