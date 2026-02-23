@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 
 import yaml
 
@@ -407,7 +408,7 @@ def build_ped(
 
     stable_lw = 3.0
     connector_lw = 1.5
-    label_offset = 0.0
+    label_offset = 0.02
 
     plateau_width = 0.35
     connector_width = 0.30
@@ -416,7 +417,8 @@ def build_ped(
 
     state_centers: list[float] = []
     state_energies: list[float] = []
-    state_labels: list[str] = ["state_0"]
+    start_label = str(selected_path.get("startlabel", "state_0"))
+    state_labels: list[str] = [start_label]
 
     # Always start from a horizontal line at the zero reference energy.
     ax.plot(
@@ -492,10 +494,11 @@ def build_ped(
     y_span = max(y_max - y_min, 1e-6)
     dy = label_offset * y_span
     for x_state, y_state, state_label in zip(state_centers, state_energies, state_labels):
+        display_label = _format_chemical_subscripts(state_label)
         ax.text(
             x_state,
             y_state - dy,
-            state_label,
+            display_label,
             rotation=-90,
             rotation_mode="anchor",
             ha="left",
@@ -547,3 +550,8 @@ def build_ped(
     else:
         plt.show()
 
+
+def _format_chemical_subscripts(label: str) -> str:
+    """Convert element-count digits in labels to matplotlib mathtext subscripts."""
+
+    return re.sub(r"(?<=[A-Za-z*\)])(\d+)", r"$_{\1}$", label)

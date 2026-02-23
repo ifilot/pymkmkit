@@ -5,6 +5,7 @@ import yaml
 from click.testing import CliRunner
 
 from pymkmkit.cli import cli
+from pymkmkit.network_reader import _format_chemical_subscripts
 
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -637,3 +638,71 @@ paths:
     assert result.exit_code == 0
     assert output_file.exists()
     assert output_file.stat().st_size > 0
+
+
+def test_build_ped_cli_uses_path_startlabel_for_state_0(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    for state_path in ("is.yaml", "ts.yaml", "fs.yaml"):
+        (states_dir / state_path).write_text(
+            """
+energy:
+  electronic: 0.0
+vibrations:
+  frequencies_cm-1: [100.0]
+  paired_modes_averaged: true
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: IS
+    file: states/is.yaml
+  - name: FS
+    file: states/fs.yaml
+transition_states:
+  - name: TS
+    file: states/ts.yaml
+network:
+  - name: surface_step
+    reaction: IS* => FS*
+    forward:
+      ts:
+        - name: TS
+      is:
+        - name: IS
+    backward:
+      ts:
+        - name: TS
+      is:
+        - name: FS
+paths:
+  - name: methanation
+    startlabel: CO + 3H2
+    steps:
+      - name: surface_step
+        label: CO* + 3H2
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output_file = tmp_path / "ped_startlabel.png"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["build_ped", str(network_file), "methanation", str(output_file)],
+    )
+
+    assert result.exit_code == 0
+    assert output_file.exists()
+
+
+def test_format_chemical_subscripts_only_subscripts_attached_digits():
+    assert _format_chemical_subscripts("CO* + 3H2") == "CO* + 3H$_{2}$"
