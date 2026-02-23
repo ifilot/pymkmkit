@@ -90,7 +90,21 @@ def read_network_command(network_file):
 
     for step in steps:
         click.echo(f"Reaction: {step.reaction}")
-        #click.echo(f"  Forward equation: {step.forward_equation}")
-        click.echo(f"  Forward barrier: {step.forward_total_barrier:.6f} eV (inc. ZPE-corr: {step.forward_zpe_correction:.6f})")
-        #click.echo(f"  Reverse equation: {step.reverse_equation}")
-        click.echo(f"  Reverse barrier: {step.reverse_total_barrier:.6f} eV (inc. ZPE-corr: {step.reverse_zpe_correction:.6f})")
+        if step.step_type == "ads":
+            click.echo(
+                "  Adsorption heat: "
+                f"{step.forward_total_barrier:.6f} eV "
+                f"(inc. ZPE-corr: {step.forward_zpe_correction:.6f})"
+            )
+            continue
+
+        click.echo(
+            "  Forward barrier: "
+            f"{step.forward_total_barrier:.6f} eV "
+            f"(inc. ZPE-corr: {step.forward_zpe_correction:.6f})"
+        )
+        click.echo(
+            "  Reverse barrier: "
+            f"{step.reverse_total_barrier:.6f} eV "
+            f"(inc. ZPE-corr: {step.reverse_zpe_correction:.6f})"
+        )

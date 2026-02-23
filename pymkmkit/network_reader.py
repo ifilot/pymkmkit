@@ -20,6 +20,7 @@ class State:
 @dataclass(frozen=True)
 class ElementaryStep:
     name: str
+    step_type: str
     reaction: str
     forward_equation: str
     reverse_equation: str
@@ -200,6 +201,43 @@ def _compute_barrier(
     return electronic_barrier, zpe_correction, total_barrier, full_equation
 
 
+def _compute_adsorption_heat(
+    step_data: dict,
+    states: dict[str, State],
+) -> tuple[float, float, float, str]:
+    fs_energy, fs_energy_expr = _sum_energy(step_data.get("fs", []), states)
+    is_energy, is_energy_expr = _sum_energy(step_data.get("is", []), states)
+
+    normalization = step_data.get("normalization", 1)
+    try:
+        normalization_value = float(normalization)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid normalization value: {normalization}") from exc
+
+    if normalization_value == 0:
+        raise ValueError("Normalization cannot be zero")
+
+    electronic_heat = (fs_energy - is_energy) / normalization_value
+    electronic_equation = (
+        f"({fs_energy_expr} - ({is_energy_expr})) / {normalization_value:g}"
+    )
+
+    fs_zpe, fs_zpe_expr = _sum_zpe(step_data.get("fs", []), states, normalization_value)
+    is_zpe, is_zpe_expr = _sum_zpe(step_data.get("is", []), states, normalization_value)
+
+    zpe_correction = fs_zpe - is_zpe
+    zpe_equation = f"({fs_zpe_expr} - ({is_zpe_expr}))"
+
+    total_heat = electronic_heat + zpe_correction
+    full_equation = (
+        f"E_el: {electronic_equation}; "
+        f"ZPE corr: {zpe_equation}; "
+        f"Total: ({electronic_equation}) + ({zpe_equation})"
+    )
+
+    return electronic_heat, zpe_correction, total_heat, full_equation
+
+
 def read_network(network_file: str | Path) -> list[ElementaryStep]:
     network_path = Path(network_file).resolve()
 
@@ -210,25 +248,44 @@ def read_network(network_file: str | Path) -> list[ElementaryStep]:
 
     steps: list[ElementaryStep] = []
     for step in network_data.get("network", []):
-        forward_data = step.get("forward", {})
-        backward_data = step.get("backward", {})
+        step_type = step.get("type", "surf")
+        if step_type not in {"surf", "ads"}:
+            raise ValueError(
+                f"Invalid network step type '{step_type}'. Expected 'surf' or 'ads'."
+            )
 
-        (
-            forward_el,
-            forward_zpe,
-            forward_total,
-            forward_eq,
-        ) = _compute_barrier(forward_data, states)
-        (
-            reverse_el,
-            reverse_zpe,
-            reverse_total,
-            reverse_eq,
-        ) = _compute_barrier(backward_data, states)
+        if step_type == "ads":
+            (
+                forward_el,
+                forward_zpe,
+                forward_total,
+                forward_eq,
+            ) = _compute_adsorption_heat(step, states)
+            reverse_el = 0.0
+            reverse_zpe = 0.0
+            reverse_total = 0.0
+            reverse_eq = "N/A"
+        else:
+            forward_data = step.get("forward", {})
+            backward_data = step.get("backward", {})
+
+            (
+                forward_el,
+                forward_zpe,
+                forward_total,
+                forward_eq,
+            ) = _compute_barrier(forward_data, states)
+            (
+                reverse_el,
+                reverse_zpe,
+                reverse_total,
+                reverse_eq,
+            ) = _compute_barrier(backward_data, states)
 
         steps.append(
             ElementaryStep(
                 name=step.get("name", "unnamed_step"),
+                step_type=step_type,
                 reaction=step.get("reaction", ""),
                 forward_equation=forward_eq,
                 reverse_equation=reverse_eq,

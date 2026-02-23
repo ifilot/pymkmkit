@@ -221,3 +221,27 @@ network:
       - name: CO*
         stoichiometry: 1
     normalization: 2
+  - name: H2 adsorption
+    type: ads
+    reaction: H2 + 2* => 2H*
+    is:
+      - name: H2
+        stoichiometry: 1
+      - name: empty
+        stoichiometry: 1
+    fs: 
+      - name: H*
+        stoichiometry: 1
+    normalization: 2
+  - name: H2O adsorption
+    type: ads
+    reaction: H2O + * => H2O*
+    is:
+      - name: H2O
+        stoichiometry: 2
+      - name: empty
+        stoichiometry: 1
+    fs: 
+      - name: H2O*
+        stoichiometry: 1
+    normalization: 2

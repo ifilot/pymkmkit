@@ -135,12 +135,8 @@ network:
 
     assert result.exit_code == 0
     assert "Reaction: IS* => FS*" in result.output
-    assert "Forward electronic barrier: 1.000000" in result.output
-    assert "Forward ZPE correction: 0.030996" in result.output
-    assert "Forward total barrier: 1.030996" in result.output
-    assert "Reverse electronic barrier: 1.000000" in result.output
-    assert "Reverse ZPE correction: 0.049594" in result.output
-    assert "Reverse total barrier: 1.049594" in result.output
+    assert "Forward barrier: 1.030996 eV (inc. ZPE-corr: 0.030996)" in result.output
+    assert "Reverse barrier: 1.049594 eV (inc. ZPE-corr: 0.049594)" in result.output
 
 
 def test_read_network_cli_normalizes_zpe_when_not_paired(tmp_path):
@@ -210,7 +206,7 @@ network:
     result = runner.invoke(cli, ["read_network", str(network_file)])
 
     assert result.exit_code == 0
-    assert "Forward ZPE correction: 0.024797" in result.output
+    assert "Forward barrier: 0.524797 eV (inc. ZPE-corr: 0.024797)" in result.output
 
 
 def test_read_network_cli_allows_missing_vibrations_as_zero_zpe(tmp_path):
@@ -277,6 +273,82 @@ network:
     result = runner.invoke(cli, ["read_network", str(network_file)])
 
     assert result.exit_code == 0
-    assert "Forward electronic barrier: 1.000000" in result.output
-    assert "Forward ZPE correction: 0.061992" in result.output
-    assert "Forward total barrier: 1.061992" in result.output
+    assert "Forward barrier: 1.061992 eV (inc. ZPE-corr: 0.061992)" in result.output
+
+
+def test_read_network_cli_adsorption_heat_with_zpe(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    gas_file = states_dir / "gas.yaml"
+    empty_file = states_dir / "empty.yaml"
+    ads_file = states_dir / "ads.yaml"
+
+    gas_file.write_text(
+        """
+energy:
+  electronic: -0.2
+vibrations:
+  frequencies_cm-1: [100.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    empty_file.write_text(
+        """
+energy:
+  electronic: -1.0
+vibrations:
+  frequencies_cm-1: [200.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    ads_file.write_text(
+        """
+energy:
+  electronic: -1.5
+vibrations:
+  frequencies_cm-1: [600.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: GAS
+    file: states/gas.yaml
+  - name: EMPTY
+    file: states/empty.yaml
+  - name: ADS
+    file: states/ads.yaml
+network:
+  - name: adsorption
+    type: ads
+    reaction: GAS + * => ADS*
+    is:
+      - name: GAS
+        stoichiometry: 1
+      - name: EMPTY
+        stoichiometry: 1
+    fs:
+      - name: ADS
+        stoichiometry: 1
+    normalization: 1
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["read_network", str(network_file)])
+
+    assert result.exit_code == 0
+    assert "Reaction: GAS + * => ADS*" in result.output
+    assert "Adsorption heat: -0.281402 eV (inc. ZPE-corr: 0.018598)" in result.output
