@@ -245,3 +245,18 @@ network:
       - name: H2O*
         stoichiometry: 1
     normalization: 2
+paths:
+  - name: methanation
+    steps:
+      - name: CO adsorption
+      - name: H2 adsorption
+        factor: 6
+      - name: CO dissociation
+      - name: C hydrogenation
+      - name: CH hydrogenation
+      - name: CH2 hydrogenation
+      - name: CH3 hydrogenation
+      - name: O hydrogenation
+      - name: OH hydrogenation
+      - name: H2O adsorption
+        factor: -1
