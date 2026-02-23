@@ -358,3 +358,192 @@ def evaluate_paths(network_file: str | Path) -> list[ReactionPath]:
         )
 
     return paths
+
+
+def build_ped(
+    network_file: str | Path,
+    path_name: str,
+    output_file: str | Path | None = None,
+) -> None:
+    """Build a potential energy diagram (PED) for a named path."""
+
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    network_path = Path(network_file).resolve()
+    with network_path.open("r", encoding="utf-8") as stream:
+        network_data = yaml.safe_load(stream) or {}
+
+    steps = read_network(network_file)
+    steps_by_name = {step.name: step for step in steps}
+
+    selected_path = None
+    for path in network_data.get("paths", []):
+        if path.get("name") == path_name:
+            selected_path = path
+            break
+
+    if selected_path is None:
+        raise ValueError(f"Path '{path_name}' not found in network file")
+
+    condensed_steps: list[tuple[ElementaryStep, float, str]] = []
+    for index, path_step in enumerate(selected_path.get("steps", []), start=1):
+        step_name = path_step.get("name")
+        if step_name not in steps_by_name:
+            raise ValueError(f"Unknown step '{step_name}' referenced in path '{path_name}'")
+
+        factor = path_step.get("factor", 1)
+        try:
+            factor_value = float(factor)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Invalid factor for step '{step_name}' in path '{path_name}': {factor}"
+            ) from exc
+
+        label = str(path_step.get("label", f"state_{index}"))
+        condensed_steps.append((steps_by_name[step_name], factor_value, label))
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    stable_lw = 3.0
+    connector_lw = 1.5
+    label_offset = 0.0
+
+    plateau_width = 0.35
+    connector_width = 0.30
+    x_cursor = 0.0
+    current_energy = 0.0
+
+    state_centers: list[float] = []
+    state_energies: list[float] = []
+    state_labels: list[str] = ["state_0"]
+
+    # Always start from a horizontal line at the zero reference energy.
+    ax.plot(
+        [x_cursor, x_cursor + plateau_width],
+        [current_energy, current_energy],
+        color="black",
+        linewidth=stable_lw,
+    )
+    state_centers.append(x_cursor + 0.5 * plateau_width)
+    state_energies.append(current_energy)
+    x_cursor += plateau_width
+
+    for step, factor_value, label in condensed_steps:
+        magnitude = abs(factor_value)
+        direction = 1 if factor_value >= 0 else -1
+
+        if direction > 0:
+            final_energy = current_energy + magnitude * step.reaction_heat_total
+            barrier = magnitude * step.forward_total_barrier
+        else:
+            final_energy = current_energy - magnitude * step.reaction_heat_total
+            barrier = magnitude * step.reverse_total_barrier
+
+        if step.step_type == "surf":
+            ts_energy = current_energy + barrier
+            x_start = x_cursor
+            x_end = x_cursor + connector_width
+            x_peak = 0.5 * (x_start + x_end)
+
+            x_parabola = np.linspace(x_start, x_end, 120)
+            a = np.array([
+                [x_start**2, x_start, 1.0],
+                [x_peak**2, x_peak, 1.0],
+                [x_end**2, x_end, 1.0],
+            ])
+            b = np.array([current_energy, ts_energy, final_energy])
+            coef = np.linalg.solve(a, b)
+            y_parabola = coef[0] * x_parabola**2 + coef[1] * x_parabola + coef[2]
+            ax.plot(
+                x_parabola,
+                y_parabola,
+                color="tab:blue",
+                linewidth=connector_lw,
+                linestyle="--",
+            )
+        else:
+            ax.plot(
+                [x_cursor, x_cursor + connector_width],
+                [current_energy, final_energy],
+                color="tab:blue",
+                linewidth=connector_lw,
+                linestyle="--",
+            )
+
+        x_cursor += connector_width
+        current_energy = final_energy
+
+        # Draw stable-state plateau thicker than connecting lines.
+        ax.plot(
+            [x_cursor, x_cursor + plateau_width],
+            [current_energy, current_energy],
+            color="black",
+            linewidth=stable_lw,
+        )
+        state_centers.append(x_cursor + 0.5 * plateau_width)
+        state_energies.append(current_energy)
+        state_labels.append(label)
+        x_cursor += plateau_width
+
+    # Draw state labels (-90°) with their top aligned to the state line.
+    y_min = min(state_energies) if state_energies else 0.0
+    y_max = max(state_energies) if state_energies else 0.0
+    y_span = max(y_max - y_min, 1e-6)
+    dy = label_offset * y_span
+    for x_state, y_state, state_label in zip(state_centers, state_energies, state_labels):
+        ax.text(
+            x_state,
+            y_state - dy,
+            state_label,
+            rotation=-90,
+            rotation_mode="anchor",
+            ha="left",
+            va="top",
+            fontsize=8,
+            clip_on=False,
+        )
+
+    # Final reaction heat annotation with vertical arrow and vertical text.
+    final_energy = state_energies[-1] if state_energies else 0.0
+    arrow_x = x_cursor + 0.12
+    ax.annotate(
+        "",
+        xy=(arrow_x, final_energy),
+        xytext=(arrow_x, 0.0),
+        arrowprops={"arrowstyle": "->", "linewidth": 1.5, "color": "black"},
+    )
+
+    delta_text = f"ΔE = {final_energy:.3f} eV"
+    text_y = 0.5 * final_energy
+    if abs(final_energy) < 1e-12:
+        text_y = 0.0
+    ax.text(
+        arrow_x + 0.04,
+        text_y,
+        delta_text,
+        rotation=-90,
+        va="center",
+        ha="left",
+        fontsize=9,
+    )
+
+    ax.set_xlabel("Reaction coordinate")
+    ax.set_ylabel("Energy (eV)")
+    ax.set_title(f"Potential energy diagram: {path_name}")
+    ax.set_xticks([])
+    ax.grid(axis="y", linestyle="--", alpha=0.35)
+    y_min_plot = min(state_energies + [0.0])
+    y_max_plot = max(state_energies + [0.0])
+    y_span_plot = max(y_max_plot - y_min_plot, 1e-6)
+    ax.set_ylim(y_min_plot - 0.45 * y_span_plot, y_max_plot + 0.20 * y_span_plot)
+    fig.tight_layout()
+
+    if output_file:
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_path, dpi=300)
+        plt.close(fig)
+    else:
+        plt.show()
+

@@ -5,7 +5,8 @@ dependencies = [
     "click", 
     "pyyaml", 
     "numpy",
-    "ase"
+    "ase",
+    "matplotlib"
 ]
 
 [project.scripts]

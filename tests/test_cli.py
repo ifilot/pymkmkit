@@ -458,3 +458,182 @@ paths:
 
     assert result.exit_code == 0
     assert "Path combined: 1.406199 eV" in result.output
+
+
+def test_build_ped_cli_writes_output_file(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    is_file = states_dir / "is.yaml"
+    ts_file = states_dir / "ts.yaml"
+    fs_file = states_dir / "fs.yaml"
+
+    is_file.write_text(
+        """
+energy:
+  electronic: -1.0
+vibrations:
+  frequencies_cm-1: [500.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    ts_file.write_text(
+        """
+energy:
+  electronic: 0.0
+vibrations:
+  frequencies_cm-1: [1000.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    fs_file.write_text(
+        """
+energy:
+  electronic: -2.0
+vibrations:
+  frequencies_cm-1: [200.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: IS
+    file: states/is.yaml
+  - name: FS
+    file: states/fs.yaml
+transition_states:
+  - name: TS
+    file: states/ts.yaml
+network:
+  - name: surface_step
+    reaction: IS* => FS*
+    forward:
+      ts:
+        - name: TS
+      is:
+        - name: IS
+    backward:
+      ts:
+        - name: TS
+      is:
+        - name: FS
+paths:
+  - name: methanation
+    steps:
+      - name: surface_step
+        factor: 2.5
+        label: state_1
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output_file = tmp_path / "ped.png"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["build_ped", str(network_file), "methanation", str(output_file)],
+    )
+
+    assert result.exit_code == 0
+    assert output_file.exists()
+    assert output_file.stat().st_size > 0
+    assert f"Potential energy diagram written to: {output_file}" in result.output
+
+
+def test_build_ped_cli_uses_placeholder_labels_when_missing(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    is_file = states_dir / "is.yaml"
+    ts_file = states_dir / "ts.yaml"
+    fs_file = states_dir / "fs.yaml"
+
+    is_file.write_text(
+        """
+energy:
+  electronic: -1.0
+vibrations:
+  frequencies_cm-1: [500.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    ts_file.write_text(
+        """
+energy:
+  electronic: 0.0
+vibrations:
+  frequencies_cm-1: [1000.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    fs_file.write_text(
+        """
+energy:
+  electronic: -2.0
+vibrations:
+  frequencies_cm-1: [200.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: IS
+    file: states/is.yaml
+  - name: FS
+    file: states/fs.yaml
+transition_states:
+  - name: TS
+    file: states/ts.yaml
+network:
+  - name: surface_step
+    reaction: IS* => FS*
+    forward:
+      ts:
+        - name: TS
+      is:
+        - name: IS
+    backward:
+      ts:
+        - name: TS
+      is:
+        - name: FS
+paths:
+  - name: methanation
+    steps:
+      - name: surface_step
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output_file = tmp_path / "ped_placeholder.png"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["build_ped", str(network_file), "methanation", str(output_file)],
+    )
+
+    assert result.exit_code == 0
+    assert output_file.exists()
+    assert output_file.stat().st_size > 0

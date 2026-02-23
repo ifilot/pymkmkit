@@ -247,16 +247,27 @@ network:
     normalization: 2
 paths:
   - name: methanation
+    startlabel: CO + 3H2
     steps:
       - name: CO adsorption
+        label: CO* + 3H2
       - name: H2 adsorption
         factor: 6
+        label: CO* + 6H*
       - name: CO dissociation
+        label: C* + O* + 6H*
       - name: C hydrogenation
+        label: CH* + O* + 5H*
       - name: CH hydrogenation
+        label: CH2* + O* + 4H*
       - name: CH2 hydrogenation
+        label: CH3* + O* + 3H*
       - name: CH3 hydrogenation
+        label: CH4 + O* + 2H*
       - name: O hydrogenation
+        label: CH4 + OH* + H*
       - name: OH hydrogenation
+        label: CH4 + H2O*
       - name: H2O adsorption
         factor: -1
+        label: CH4 + H2O

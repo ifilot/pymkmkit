@@ -2,7 +2,7 @@ from pathlib import Path
 
 import click
 
-from pymkmkit.network_reader import evaluate_paths, read_network
+from pymkmkit.network_reader import build_ped, evaluate_paths, read_network
 from pymkmkit.vasp_freq import parse_vasp_frequency, parse_vasp_optimization
 from pymkmkit.yaml_writer import write_yaml
 
@@ -132,3 +132,23 @@ def evaluate_paths_command(network_file):
 
     for path in paths:
         click.echo(f"Path {path.name}: {path.total_reaction_energy:.6f} eV")
+
+
+@cli.command("build_ped")
+@click.argument(
+    "network_file",
+    type=click.Path(exists=True, dir_okay=False)
+)
+@click.argument("path_name")
+@click.argument(
+    "output_file",
+    required=False,
+    type=click.Path(dir_okay=False),
+)
+def build_ped_command(network_file, path_name, output_file):
+    """Build a potential energy diagram for a named path."""
+
+    build_ped(network_file, path_name, output_file)
+
+    if output_file:
+        click.echo(f"Potential energy diagram written to: {output_file}")
