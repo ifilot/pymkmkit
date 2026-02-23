@@ -9,9 +9,15 @@ stable_states:
     file: ISFS/c.yaml
   - name: O
     file: ISFS/o.yaml
+  - name: CH
+    file: ISFS/ch.yaml
+  - name: H
+    file: ISFS/h.yaml
 transition_states:
   - name: CO_diss
-    file: TS/co_diss
+    file: TS/co_diss.yaml
+  - name: C_hydr
+    file: TS/c_hydr.yaml
 network:
   - name: CO dissociation
     reaction: CO* + * => C* + O*
@@ -34,4 +40,25 @@ network:
           stoichiometry: 1
         - name: O
           stoichiometry: 1
+      normalization: 2
+  - name: C hydrogenation
+    reaction: C* + H* => CH* + *
+    forward:
+      ts:
+        - name: C_hydr
+          stoichiometry: 1
+        - name: empty
+          stoichiometry: 1
+      is: 
+        - name: C
+          stoichiometry: 1
+        - name: H
+          stoichiometry: 1
+    backward:
+      ts:
+        - name: C_hydr
+          stoichiometry: 1
+      is: 
+        - name: CH
+          stoichiometry: 1        
       normalization: 2

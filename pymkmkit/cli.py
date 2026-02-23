@@ -2,6 +2,7 @@ from pathlib import Path
 
 import click
 
+from pymkmkit.network_reader import read_network
 from pymkmkit.vasp_freq import parse_vasp_frequency, parse_vasp_optimization
 from pymkmkit.yaml_writer import write_yaml
 
@@ -75,3 +76,25 @@ def opt2yaml(outcar, output):
     write_yaml(data, output)
 
     click.echo(f"YAML written to: {output}")
+
+
+@cli.command("read_network")
+@click.argument(
+    "network_file",
+    type=click.Path(exists=True, dir_okay=False)
+)
+def read_network_command(network_file):
+    """Read a network YAML file and print elementary reaction barriers."""
+
+    steps = read_network(network_file)
+
+    for step in steps:
+        click.echo(f"Reaction: {step.reaction}")
+        click.echo(f"  Forward equation: {step.forward_equation}")
+        click.echo(f"  Forward electronic barrier: {step.forward_barrier_electronic:.6f}")
+        click.echo(f"  Forward ZPE correction: {step.forward_zpe_correction:.6f}")
+        click.echo(f"  Forward total barrier: {step.forward_total_barrier:.6f}")
+        click.echo(f"  Reverse equation: {step.reverse_equation}")
+        click.echo(f"  Reverse electronic barrier: {step.reverse_barrier_electronic:.6f}")
+        click.echo(f"  Reverse ZPE correction: {step.reverse_zpe_correction:.6f}")
+        click.echo(f"  Reverse total barrier: {step.reverse_total_barrier:.6f}")
