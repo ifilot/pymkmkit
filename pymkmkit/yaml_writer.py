@@ -7,6 +7,20 @@ class InlineList(list):
 
 
 def represent_inline_list(dumper, data):
+    """Serialize :class:`InlineList` values in YAML flow style.
+
+    Parameters
+    ----------
+    dumper : yaml.Dumper
+        Active PyYAML dumper instance.
+    data : InlineList
+        Sequence to render.
+
+    Returns
+    -------
+    yaml.nodes.SequenceNode
+        YAML node representation of the list.
+    """
     return dumper.represent_sequence(
         "tag:yaml.org,2002:seq",
         data,
@@ -18,6 +32,19 @@ yaml.SafeDumper.add_representer(InlineList, represent_inline_list)
 
 
 def clean_none(d):
+    """Recursively remove keys/items whose value is ``None``.
+
+    Parameters
+    ----------
+    d : Any
+        Arbitrary Python data structure destined for YAML output.
+
+    Returns
+    -------
+    Any
+        Cleaned structure with ``None`` entries removed while preserving
+        :class:`InlineList` instances.
+    """
     # Preserve dicts
     if isinstance(d, dict):
         return {k: clean_none(v) for k, v in d.items() if v is not None}
@@ -34,6 +61,15 @@ def clean_none(d):
 
 
 def write_yaml(data, filename):
+    """Write parser output to YAML while preserving intended formatting.
+
+    Parameters
+    ----------
+    data : dict
+        Data structure to serialize.
+    filename : str | pathlib.Path
+        Target YAML file path.
+    """
     with open(filename, "w") as f:
         yaml.dump(
             clean_none(data),

@@ -45,6 +45,18 @@ def _clean_value(value, cast):
 
 
 def extract_incar_settings(text):
+    """Extract selected INCAR parameters from OUTCAR text.
+
+    Parameters
+    ----------
+    text : str
+        Full OUTCAR content.
+
+    Returns
+    -------
+    dict
+        Mapping of key INCAR tags to parsed values.
+    """
     incar = {}
 
     for line in text.splitlines():
@@ -64,6 +76,7 @@ def extract_incar_settings(text):
 # ============================================================
 
 def extract_potcar_info(text):
+    """Extract unique POTCAR descriptors from OUTCAR text."""
     pots = []
 
     for line in text.splitlines():
@@ -82,6 +95,7 @@ def extract_potcar_info(text):
 
 
 def extract_ionic_energies(text):
+    """Extract ionic-step electronic energies from OUTCAR text."""
     energies = []
 
     for line in text.splitlines():
@@ -95,6 +109,7 @@ def extract_ionic_energies(text):
 
 
 def extract_total_energies(text):
+    """Extract free energies (TOTEN) from OUTCAR text."""
     energies = []
 
     for line in text.splitlines():
@@ -108,6 +123,7 @@ def extract_total_energies(text):
 
 
 def _parse_atomic_symbols(text):
+    """Infer atom symbols for each site from OUTCAR species metadata."""
     counts = None
     symbols = []
 
@@ -143,6 +159,7 @@ def _parse_atomic_symbols(text):
 
 
 def _parse_last_lattice_vectors(lines):
+    """Parse the final reported lattice vectors from OUTCAR lines."""
     for i in range(len(lines) - 1, -1, -1):
         if "direct lattice vectors" in lines[i]:
             vectors = []
@@ -155,6 +172,7 @@ def _parse_last_lattice_vectors(lines):
 
 
 def _parse_last_direct_positions(lines, n_atoms):
+    """Parse final direct (fractional) coordinates for all atoms."""
     marker = "position of ions in fractional coordinates (direct lattice)"
 
     for i in range(len(lines) - 1, -1, -1):
@@ -169,6 +187,7 @@ def _parse_last_direct_positions(lines, n_atoms):
 
 
 def _parse_atoms_from_outcar_text(text):
+    """Construct an ASE ``Atoms`` object directly from OUTCAR text."""
     lines = text.splitlines()
     symbols = _parse_atomic_symbols(text)
     cell = _parse_last_lattice_vectors(lines)
@@ -180,6 +199,7 @@ def _parse_atoms_from_outcar_text(text):
 
 
 def _read_last_optimization_atoms(outcar_path, text):
+    """Read final optimization geometry, with text-parsing fallback."""
     try:
         return read(outcar_path, index=-1)
     except (ParseError, UnknownFileTypeError, KeyError, ValueError):
@@ -299,7 +319,22 @@ def extract_perturbed_hessian(text):
 
 
 def frequencies_from_partial_hessian(dof_labels, hessian_matrix, atoms):
-    """Recover frequencies (cm-1) from a partial Hessian for perturbed DOFs."""
+    """Recover vibrational frequencies from a partial Hessian matrix.
+
+    Parameters
+    ----------
+    dof_labels : list[str]
+        Degree-of-freedom labels (for example ``1X``).
+    hessian_matrix : list[list[float]]
+        Hessian values in eV/Å² units for selected DOFs.
+    atoms : ase.Atoms
+        Atomic structure used to assign atomic masses.
+
+    Returns
+    -------
+    list[float]
+        Frequencies in cm⁻¹ sorted in descending order.
+    """
     dof_masses = []
     for label in dof_labels:
         match = _DOF_LABEL_RE.match(label)
@@ -324,6 +359,7 @@ def frequencies_from_partial_hessian(dof_labels, hessian_matrix, atoms):
 # ============================================================
 
 def formula_from_atom_order(atoms):
+    """Build a chemical formula preserving first-seen element order."""
     counts = {}
     order = []
 
@@ -343,6 +379,7 @@ def formula_from_atom_order(atoms):
 
 
 def lattice_vectors(atoms, precision=8):
+    """Return lattice vectors rounded for stable YAML serialization."""
     fmt = f"{{:.{precision}f}}"
     return [
         InlineList([float(fmt.format(x)) for x in vec])
@@ -374,6 +411,20 @@ def geometry_direct_strings(atoms, precision=8):
 # ============================================================
 
 def parse_vasp_frequency(outcar_path, average_pairs=False):
+    """Parse a VASP frequency OUTCAR file into pymkmkit YAML schema.
+
+    Parameters
+    ----------
+    outcar_path : str | pathlib.Path
+        Path to the input OUTCAR file.
+    average_pairs : bool, default=False
+        If ``True``, average vibrational modes in sequential pairs.
+
+    Returns
+    -------
+    dict
+        Structured dictionary ready to be serialized to YAML.
+    """
     path = Path(outcar_path)
 
     if not path.exists():
@@ -446,6 +497,7 @@ def parse_vasp_frequency(outcar_path, average_pairs=False):
 
 
 def parse_vasp_optimization(outcar_path):
+    """Parse a VASP optimization OUTCAR file into pymkmkit YAML schema."""
     path = Path(outcar_path)
 
     if not path.exists():

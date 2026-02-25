@@ -8,6 +8,9 @@ Welcome to the PyMKMKit documentation.
    :caption: Contents
 
    installation
+   tutorial
+   api
+   cli
 
 Within ab initio microkinetic modeling, chemokinetic networks are constructed
 using electronic structure calculations, typically periodic density functional

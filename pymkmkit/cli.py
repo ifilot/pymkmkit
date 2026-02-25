@@ -17,7 +17,13 @@ def cli():
 # Shared CLI utilities
 # ---------------------------------------------------------------------------
 def _ensure_output_dir(output):
-    """Ensure the target output directory exists before writing files."""
+    """Create parent directories for an output file path.
+
+    Parameters
+    ----------
+    output : str | pathlib.Path
+        Destination file path provided by the CLI command.
+    """
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -45,7 +51,17 @@ def _ensure_output_dir(output):
     ),
 )
 def freq2yaml(outcar, output, average_pairs):
-    """Parse a VASP OUTCAR frequency calculation into YAML."""
+    """Convert a VASP frequency-calculation ``OUTCAR`` file to YAML.
+
+    Parameters
+    ----------
+    outcar : str
+        Input OUTCAR path.
+    output : str
+        Output YAML path.
+    average_pairs : bool
+        Whether sequential vibrational modes should be pair-averaged.
+    """
 
     _ensure_output_dir(output)
 
@@ -74,7 +90,15 @@ def freq2yaml(outcar, output, average_pairs):
     help="Output YAML file (required)."
 )
 def opt2yaml(outcar, output):
-    """Parse a VASP OUTCAR geometry optimization into YAML."""
+    """Convert a VASP optimization ``OUTCAR`` file to YAML.
+
+    Parameters
+    ----------
+    outcar : str
+        Input OUTCAR path.
+    output : str
+        Output YAML path.
+    """
 
     _ensure_output_dir(output)
 
@@ -94,7 +118,13 @@ def opt2yaml(outcar, output):
     type=click.Path(exists=True, dir_okay=False)
 )
 def read_network_command(network_file):
-    """Read a network YAML file and print elementary reaction barriers."""
+    """Load a network definition and print per-step barrier information.
+
+    Parameters
+    ----------
+    network_file : str
+        Path to the network YAML file.
+    """
 
     steps = read_network(network_file)
 
@@ -126,7 +156,13 @@ def read_network_command(network_file):
     type=click.Path(exists=True, dir_okay=False)
 )
 def evaluate_paths_command(network_file):
-    """Read a network YAML file and print total reaction energy for each path."""
+    """Evaluate and print total reaction energy for each named path.
+
+    Parameters
+    ----------
+    network_file : str
+        Path to the network YAML file.
+    """
 
     paths = evaluate_paths(network_file)
 
@@ -146,7 +182,17 @@ def evaluate_paths_command(network_file):
     type=click.Path(dir_okay=False),
 )
 def build_ped_command(network_file, path_name, output_file):
-    """Build a potential energy diagram for a named path."""
+    """Generate a potential energy diagram for a selected reaction path.
+
+    Parameters
+    ----------
+    network_file : str
+        Path to the network YAML file.
+    path_name : str
+        Name of the path to render.
+    output_file : str | None
+        Optional output image path. If omitted, a GUI window is shown.
+    """
 
     build_ped(network_file, path_name, output_file)
 

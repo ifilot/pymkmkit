@@ -1,14 +1,27 @@
 from datetime import datetime
+from pathlib import Path
+import sys
 
 project = 'PyMKMKit'
 author = 'PyMKMKit contributors'
 copyright = f"{datetime.now():%Y}, {author}"
 
+# Ensure autodoc can import the local package when docs are built from the
+# repository checkout.
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 extensions = [
     'sphinx.ext.autodoc',
+    'sphinx.ext.autosummary',
     'sphinx.ext.napoleon',
     'sphinx.ext.viewcode',
 ]
+
+autodoc_member_order = 'bysource'
+autodoc_typehints = 'description'
+autosummary_generate = True
 
 templates_path = ['_templates']
 exclude_patterns = []

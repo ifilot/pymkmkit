@@ -11,6 +11,16 @@ EV_PER_CM1 = 1.239841984e-4
 
 @dataclass(frozen=True)
 class State:
+    """Thermodynamic state used in network energy bookkeeping.
+
+    Data fields:
+      - ``name``: state identifier referenced by network reaction terms.
+      - ``file``: resolved path to the source YAML file for this state.
+      - ``electronic_energy``: electronic energy in eV from ``energy.electronic``.
+      - ``zpe_energy``: zero-point energy contribution in eV from vibrations.
+      - ``paired_modes_averaged``: whether pair-averaged vibrational modes were used.
+    """
+
     name: str
     file: Path
     electronic_energy: float
@@ -20,6 +30,13 @@ class State:
 
 @dataclass(frozen=True)
 class ElementaryStep:
+    """Evaluated energetic quantities for one elementary reaction step.
+
+    Data fields include the step identity and reaction string, the symbolic
+    forward/reverse equations used in the calculations, forward/reverse
+    electronic and ZPE terms, and net reaction-heat terms in eV.
+    """
+
     name: str
     step_type: str
     reaction: str
@@ -38,11 +55,23 @@ class ElementaryStep:
 
 @dataclass(frozen=True)
 class ReactionPath:
+    """Aggregated energy result for a named reaction pathway.
+
+    Data fields:
+      - ``name``: path identifier from the ``paths`` section.
+      - ``total_reaction_energy``: sum of factor-weighted step heats in eV.
+    """
+
     name: str
     total_reaction_energy: float
 
 
 def _resolve_state_file(base_dir: Path, state_file: str) -> Path:
+    """Resolve a state file path relative to the network file directory.
+
+    The function accepts explicit filenames and also tries ``.yaml`` and
+    ``.yml`` suffixes when needed.
+    """
     path = (base_dir / state_file).resolve()
     if path.exists():
         return path
@@ -59,6 +88,14 @@ def _resolve_state_file(base_dir: Path, state_file: str) -> Path:
 
 
 def _read_state_data(state_path: Path) -> tuple[float, float, bool]:
+    """Read a state YAML file and extract electronic energy and ZPE terms.
+
+    Returns
+    -------
+    tuple[float, float, bool]
+        Electronic energy in eV, computed ZPE energy in eV, and a flag
+        indicating whether vibrational modes were pair-averaged.
+    """
     with state_path.open("r", encoding="utf-8") as stream:
         state_data = yaml.safe_load(stream) or {}
 
@@ -92,6 +129,7 @@ def _read_state_data(state_path: Path) -> tuple[float, float, bool]:
 
 
 def _load_states(network_data: dict, base_dir: Path) -> dict[str, State]:
+    """Load all stable and transition states declared in a network file."""
     states: dict[str, State] = {}
 
     for section in ("stable_states", "transition_states"):
@@ -115,6 +153,7 @@ def _load_states(network_data: dict, base_dir: Path) -> dict[str, State]:
 
 
 def _sum_energy(terms: list[dict], states: dict[str, State]) -> tuple[float, str]:
+    """Compute stoichiometry-weighted electronic energy and equation text."""
     if not terms:
         return 0.0, "0"
 
@@ -144,6 +183,7 @@ def _sum_zpe(
     states: dict[str, State],
     normalization_value: float,
 ) -> tuple[float, str]:
+    """Compute stoichiometry-weighted ZPE contribution and equation text."""
     if not terms:
         return 0.0, "0"
 
@@ -178,6 +218,7 @@ def _compute_barrier(
     direction_data: dict,
     states: dict[str, State],
 ) -> tuple[float, float, float, str]:
+    """Compute electronic, ZPE, and total barrier terms for one direction."""
     ts_energy, ts_energy_expr = _sum_energy(direction_data.get("ts", []), states)
     is_energy, is_energy_expr = _sum_energy(direction_data.get("is", []), states)
 
@@ -215,6 +256,7 @@ def _compute_adsorption_heat(
     step_data: dict,
     states: dict[str, State],
 ) -> tuple[float, float, float, str]:
+    """Compute electronic and ZPE-corrected heat for an adsorption step."""
     fs_energy, fs_energy_expr = _sum_energy(step_data.get("fs", []), states)
     is_energy, is_energy_expr = _sum_energy(step_data.get("is", []), states)
 
@@ -249,6 +291,7 @@ def _compute_adsorption_heat(
 
 
 def read_network(network_file: str | Path) -> list[ElementaryStep]:
+    """Parse a network YAML file into evaluated elementary-step objects."""
     network_path = Path(network_file).resolve()
 
     with network_path.open("r", encoding="utf-8") as stream:
@@ -321,6 +364,7 @@ def read_network(network_file: str | Path) -> list[ElementaryStep]:
 
 
 def evaluate_paths(network_file: str | Path) -> list[ReactionPath]:
+    """Calculate net reaction energies for each named pathway in a network."""
     network_path = Path(network_file).resolve()
     with network_path.open("r", encoding="utf-8") as stream:
         network_data = yaml.safe_load(stream) or {}
@@ -366,7 +410,17 @@ def build_ped(
     path_name: str,
     output_file: str | Path | None = None,
 ) -> None:
-    """Build a potential energy diagram (PED) for a named path."""
+    """Build and optionally save a potential energy diagram for a path.
+
+    Parameters
+    ----------
+    network_file : str | pathlib.Path
+        Network definition file.
+    path_name : str
+        Path identifier under ``paths`` in the network YAML.
+    output_file : str | pathlib.Path | None
+        Image output path. When ``None``, the plot is displayed interactively.
+    """
 
     import numpy as np
     import matplotlib.pyplot as plt
@@ -552,6 +606,17 @@ def build_ped(
 
 
 def _format_chemical_subscripts(label: str) -> str:
-    """Convert element-count digits in labels to matplotlib mathtext subscripts."""
+    """Format stoichiometric digits as mathtext subscripts for plotting.
+
+    Parameters
+    ----------
+    label : str
+        Raw state label.
+
+    Returns
+    -------
+    str
+        Label with element-count digits converted to subscripts.
+    """
 
     return re.sub(r"(?<=[A-Za-z*\)])(\d+)", r"$_{\1}$", label)
