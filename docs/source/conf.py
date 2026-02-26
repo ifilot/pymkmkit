@@ -30,3 +30,6 @@ html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 html_logo = '_static/logo/logo-256.png'
 html_favicon = '_static/logo/favicon.ico'
+html_css_files = [
+    "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css"
+]
