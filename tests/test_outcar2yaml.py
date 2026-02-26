@@ -58,6 +58,8 @@ def test_parse_outcar_zip(tmp_path):
     # vibrations parsed
     assert len(data["vibrations"]["frequencies_cm-1"]) > 0
     assert "partial_hessian" in data["vibrations"]
+    assert data["calculation"]["version"] == "5.3.5"
+    assert data["calculation"]["executed_at"] == "2019-05-22T13:55:02Z"
 
 
 def test_parse_ru1121_c_with_pair_averaging(tmp_path):
@@ -93,6 +95,8 @@ def test_parse_outcar_as_optimization_uses_last_ionic_step(tmp_path):
     last_atoms = read(outcar, index=-1)
 
     assert data["calculation"]["type"] == "optimization"
+    assert data["calculation"]["version"] == "5.3.5"
+    assert data["calculation"]["executed_at"] == "2019-05-22T13:55:02Z"
     assert "vibrations" not in data
 
     expected_last_coords = [

@@ -88,6 +88,28 @@ def extract_potcar_info(text):
     return pots
 
 
+def extract_vasp_version(text):
+    """Extract the VASP version string from OUTCAR text."""
+    match = re.search(r"\bvasp\.([0-9][0-9A-Za-z_.-]*)", text, flags=re.IGNORECASE)
+    if match:
+        return match.group(1)
+    return None
+
+
+def extract_execution_timestamp(text):
+    """Extract the VASP execution date-time from OUTCAR text in UTC-like format."""
+    match = re.search(
+        r"executed\s+on.*?date\s+(\d{4}\.\d{2}\.\d{2})\s+(\d{2}:\d{2}:\d{2})",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    date_part, time_part = match.groups()
+    return f"{date_part.replace('.', '-')}T{time_part}Z"
+
+
 # ============================================================
 # Vibrational frequencies
 # ============================================================
@@ -437,6 +459,8 @@ def parse_vasp_frequency(outcar_path, average_pairs=False):
 
     incar = extract_incar_settings(text)
     potcar = extract_potcar_info(text)
+    vasp_version = extract_vasp_version(text)
+    executed_at = extract_execution_timestamp(text)
     real_freqs, imag_freqs = extract_frequencies(text)
     hessian_dofs, hessian_matrix = extract_perturbed_hessian(text)
     ionic_energies = extract_ionic_energies(text)
@@ -485,6 +509,8 @@ def parse_vasp_frequency(outcar_path, average_pairs=False):
         },
         "calculation": {
             "code": "VASP",
+            "version": vasp_version,
+            "executed_at": executed_at,
             "type": "frequency",
             "incar": incar,
             "potcar": potcar,
@@ -510,6 +536,8 @@ def parse_vasp_optimization(outcar_path):
 
     incar = extract_incar_settings(text)
     potcar = extract_potcar_info(text)
+    vasp_version = extract_vasp_version(text)
+    executed_at = extract_execution_timestamp(text)
 
     ionic_energies = extract_ionic_energies(text)
     total_energies = extract_total_energies(text)
@@ -535,6 +563,8 @@ def parse_vasp_optimization(outcar_path):
         },
         "calculation": {
             "code": "VASP",
+            "version": vasp_version,
+            "executed_at": executed_at,
             "type": "optimization",
             "incar": incar,
             "potcar": potcar,

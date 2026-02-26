@@ -33,6 +33,8 @@ def test_freq2yaml_cli_writes_frequency_yaml(tmp_path):
 
     parsed = yaml.safe_load(output.read_text())
     assert parsed["calculation"]["type"] == "frequency"
+    assert parsed["calculation"]["version"] == "6.5.1"
+    assert parsed["calculation"]["executed_at"] == "2025-11-02T10:24:49Z"
     assert parsed["vibrations"]["paired_modes_averaged"] is True
 
 
@@ -51,6 +53,8 @@ def test_opt2yaml_cli_writes_optimization_yaml(tmp_path):
 
     parsed = yaml.safe_load(output.read_text())
     assert parsed["calculation"]["type"] == "optimization"
+    assert parsed["calculation"]["version"] == "5.3.5"
+    assert parsed["calculation"]["executed_at"] == "2019-05-22T13:55:02Z"
     assert "vibrations" not in parsed
 
 

@@ -1,6 +1,10 @@
 PyMKMKit documentation
 ======================
 
+.. image:: https://www.github.com/ifilot/pymkmkit/actions/workflows/ci.yml/badge.svg
+   :target: https://www.github.com/ifilot/pymkmkit/actions/workflows/ci.yml
+   :alt: CI status
+
 Purpose
 -------
 
