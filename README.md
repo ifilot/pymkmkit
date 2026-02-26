@@ -49,7 +49,7 @@ in a virtual environment.
 pip install .
 ```
 
-To test the kit:
+To test that the kit is working correctly, one can run:
 
 ```bash
 python -m pytest -s

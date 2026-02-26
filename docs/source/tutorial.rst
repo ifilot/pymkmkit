@@ -1,141 +1,229 @@
-Tutorial: from VASP outputs to a reaction network
-=================================================
+Tutorials
+=========
 
-This tutorial walks through a complete PyMKMKit workflow using the bundled
-``examples/Ru1121`` dataset:
+Converting OUTCAR to YAML file
+##############################
 
-1. parse individual ``OUTCAR`` files into YAML state files,
-2. define a reaction network,
-3. evaluate barriers and pathway energies,
-4. generate a potential energy diagram (PED).
+This tutorial explains how one can parse a single VASP frequency calculation and
+constructs a single :code:`.yaml`-based data entry from this calculation.
 
 Prerequisites
 -------------
 
-Install PyMKMKit and verify the CLI is available:
+First, we need to prepare an :code:`OUTCAR` file that we wish to parse. Several
+example :code:`OUTCAR` are stored in :code:`tests/data` which we can unpack. For
+this tutorial, we assume that we are working under :code:`examples/individual`.
+
+Go to this folder
 
 .. code-block:: bash
 
-   pip install pymkmkit
-   pymkmkit --help
+   cd examples/individual
 
-Example project layout
-----------------------
-
-The Ru(11\ :sub:`2`\ 1) example uses separate folders for stable states,
-transition states, gas-phase species, and one network definition file.
-
-.. code-block:: text
-
-   examples/Ru1121/
-   ├── GAS/
-   ├── ISFS/
-   ├── TS/
-   └── network.yaml
-
-Step 1: create YAML files from OUTCAR files
--------------------------------------------
-
-Use ``opt2yaml`` for optimized geometries and ``freq2yaml`` for frequency jobs.
+and run
 
 .. code-block:: bash
 
-   pymkmkit opt2yaml path/to/OUTCAR -o ISFS/co.yaml
-   pymkmkit freq2yaml path/to/OUTCAR -o TS/co_diss.yaml
+   unzip ../../tests/data/OUTCAR_Ru1121_CH.zip
 
-If your system contains paired adsorbates and should be averaged in sequential
-mode pairs, add ``--average-pairs``:
+This should give the following output::
 
-.. code-block:: bash
+   Archive:  ../../tests/data/OUTCAR_Ru1121_CH.zip
+      inflating: OUTCAR_Ru1121_CH
 
-   pymkmkit freq2yaml path/to/OUTCAR -o TS/ch2_hydr.yaml --average-pairs
+Building YAML files
+-------------------
 
-The repository includes a convenience script showing this harvesting process for
-all states in a dataset.
+The :code:`OUTCAR_Ru1121_CH` file contains a frequency calculation of a CH
+molecule adsorbed on a Ru(11-21) surface. To build the :code:`yaml` file, we run
 
-.. literalinclude:: ../../examples/Ru1121/harvest.sh
-   :language: bash
-   :caption: Example batch harvesting script used to generate state YAML files.
+.. code-block:: python
 
-Step 2: inspect a generated state file
---------------------------------------
+   pymkmkit freq2yaml OUTCAR_Ru1121_CH -o ru1121_c.yaml --average-pairs
 
-A state YAML captures structure, calculation metadata, and energies. Frequency
-states also include vibrational modes and (when present) imaginary modes and
-partial Hessian data.
+The option :code:`--average-pairs` is needed in this case because the
+:code:`OUTCAR` file contains a metallic slab on which CH has been adsorbed on
+both sides. Thus, when sampling the frequencies for a single CH adsorbate, we
+need to average out the frequencies of both the top and bottom CH fragment.
 
-.. literalinclude:: ../../examples/Ru1121/TS/co_diss.yaml
-   :language: yaml
-   :caption: Transition-state YAML example.
+.. note::
 
-For optimized minima, the same schema is used without the ``vibrations`` block:
+   The ``--average-pairs`` option is required for some older slab calculations.
+   Historically, adsorbates were placed on **both sides of a metal slab** to
+   cancel dipole moments before dipole corrections became standard in VASP.
+   Modern calculations typically use dipole corrections instead and only place
+   the adsorbate on one side.
 
-.. literalinclude:: ../../examples/Ru1121/ISFS/empty.yaml
-   :language: yaml
-   :caption: Stable-state YAML example.
+   In these legacy setups, two identical adsorbates (top and bottom) produce
+   duplicate vibrational modes. Because frequencies are computed using a
+   finite-difference approach, small numerical differences appear between the
+   paired modes. Averaging the pairs recovers the vibrational frequencies
+   corresponding to a single adsorbate while reducing numerical noise.
 
-Step 3: define and understand the network file
-----------------------------------------------
+.. tip::
 
-The network file links named states to elementary steps and optional paths.
+   To visualize the frequency calculation and inspect vibrational modes, you can
+   use `Atom Architect <https://github.com/ifilot/atom-architect>`_. Visualizing
+   the displacements can help identify paired modes and confirm the averaging.
 
-.. literalinclude:: ../../examples/Ru1121/network.yaml
-   :language: yaml
-   :caption: Full network definition for the Ru(11\ :sub:`2`\ 1) methanation example.
+Understanding the generated YAML file
+-------------------------------------
 
-Key sections in ``network.yaml``:
+The generated YAML file stores all information required to reproduce and reuse
+the thermodynamic state in a microkinetic model.
 
-- ``stable_states`` and ``transition_states`` map symbolic names to state files.
-- ``network`` defines each elementary step:
+Below we highlight the key sections and why they are stored.
 
-  - ``type: surf`` uses ``forward``/``backward`` blocks with ``ts`` and ``is`` terms.
-  - ``type: ads`` uses ``is`` and ``fs`` terms for adsorption heat.
+``pymkmkit``
+~~~~~~~~~~~~
 
-- ``normalization`` rescales per-site/per-event energetics.
-- ``paths`` defines cumulative pathways as weighted sums of step reaction heats.
+Metadata describing how the file was created.
 
-Step 4: evaluate elementary-step energetics
--------------------------------------------
+.. code-block:: yaml
 
-Print forward/reverse barriers (or adsorption heat) for every step:
+   pymkmkit:
+     version: 0.1.0
+     generated: 2026-02-26T07:21:02Z
 
-.. code-block:: bash
+.. list-table::
+   :widths: 30 70
 
-   pymkmkit read_network examples/Ru1121/network.yaml
+   * - Field
+     - Purpose
+   * - ``version``
+     - pymkmkit version used to generate the file
+   * - ``generated``
+     - Timestamp for provenance and reproducibility
 
-This command resolves each referenced state file, computes electronic and ZPE
-contributions, and reports total values in eV.
+This metadata ensures traceability and helps diagnose differences between datasets.
 
-Step 5: evaluate pathway energies
----------------------------------
+``structure``
+~~~~~~~~~~~~~
 
-Compute net pathway energies from the ``paths`` section:
+Describes the atomic structure used in the calculation.
 
-.. code-block:: bash
+.. code-block:: yaml
 
-   pymkmkit evaluate_paths examples/Ru1121/network.yaml
+   structure:
+     formula: Ru48C2H2
+     lattice_vectors: [...]
+     coordinates_direct: [...]
+     pbc: [true, true, true]
 
-Each path accumulates ``factor * reaction_heat_total`` for all listed steps.
+.. list-table::
+   :widths: 30 70
 
-Step 6: generate a potential energy diagram
--------------------------------------------
+   * - Field
+     - Purpose
+   * - ``formula`` / ``n_atoms``
+     - Quick identification of system composition and size
+   * - ``lattice_vectors``
+     - Defines the periodic simulation cell
+   * - ``coordinates_direct``
+     - Atomic positions in fractional coordinates
+   * - ``pbc``
+     - Periodic boundary conditions
 
-Build a PED for a selected path and save it as an image:
+Storing the full structure allows the system to be reconstructed and verified.
 
-.. code-block:: bash
+``calculation``
+~~~~~~~~~~~~~~~
 
-   pymkmkit build_ped examples/Ru1121/network.yaml methanation ped_methanation.png
+Records how the calculation was performed.
 
-If no output filename is provided, the figure is displayed interactively.
+.. code-block:: yaml
 
-What PyMKMKit can do
---------------------
+   calculation:
+     code: VASP
+     type: frequency
+     incar: {...}
+     potcar:
+       - PAW_PBE Ru
+       - PAW_PBE C
+       - PAW_PBE H
 
-Using this workflow, PyMKMKit supports:
+.. list-table::
+   :widths: 30 70
 
-- extracting structured, reusable YAML state data from VASP outputs,
-- tracking vibrational information and ZPE corrections,
-- evaluating forward/reverse barriers and adsorption heats from a unified
-  network schema,
-- aggregating elementary steps into named mechanistic paths,
-- producing publication-ready potential-energy diagrams.
+   * - Field
+     - Purpose
+   * - ``code`` / ``type``
+     - Simulation software and calculation type
+   * - ``incar``
+     - Important settings affecting accuracy and results
+   * - ``potcar``
+     - Pseudopotentials used
+
+These parameters are essential for reproducibility and validation.
+
+``energy``
+~~~~~~~~~~
+
+.. code-block:: yaml
+
+   energy:
+     electronic: -433.134185
+
+The electronic energy forms the basis for adsorption energies, reaction energies,
+and activation barriers.
+
+``vibrations``
+~~~~~~~~~~~~~~
+
+Contains vibrational data required to compute thermodynamic properties.
+
+.. code-block:: yaml
+
+   vibrations:
+     frequencies_cm-1:
+       - 2886.2
+       - 714.1
+     partial_hessian:
+       dof_labels:
+         - 49X
+         - 49Y
+         - 49Z
+         - 50X
+         - 50Y
+         - 50Z
+         - 51X
+         - 51Y
+         - 51Z
+         - 52X
+         - 52Y
+         - 52Z
+       matrix: [...]
+     paired_modes_averaged: true
+
+.. list-table::
+   :widths: 30 70
+
+   * - Field
+     - Purpose
+   * - ``frequencies_cm-1``
+     - Vibrational modes used in partition functions
+   * - ``partial_hessian``
+     - Hessian submatrix for adsorbate degrees of freedom (stored for reuse)
+   * - ``partial_hessian.dof_labels``
+     - Maps each Hessian row/column to an *atom index* and *Cartesian direction* (e.g. ``49X``),
+       i.e., which coordinates were displaced in the finite-difference frequency calculation
+   * - ``paired_modes_averaged``
+     - Indicates symmetric slab modes were averaged
+
+Vibrational data enable computation of:
+
+- zero-point energies
+- entropy and heat capacity
+- pre-exponential factors in rate constants
+
+The ``dof_labels`` make the partial Hessian interpretable: they encode exactly
+which atoms were perturbed and in which Cartesian direction when constructing
+the finite-difference Hessian, so the stored matrix can be validated,
+visualized, or reprocessed later.
+
+.. tip::
+
+   YAML files generated by **pymkmkit** can be visualized using
+   `Atom Architect <https://github.com/ifilot/atom-architect>`_. The program can
+   display structures, vibrational modes, and displaced coordinates, making it
+   easier to inspect the finite-difference perturbations and verify the results.
