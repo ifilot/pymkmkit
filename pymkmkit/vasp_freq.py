@@ -36,6 +36,15 @@ IMPORTANT_KEYS = {
 }
 
 
+def _parse_bool_token(value):
+    token = value.strip().split()[0].strip(";").upper()
+    if token in {".TRUE.", "TRUE", "T"}:
+        return True
+    if token in {".FALSE.", "FALSE", "F"}:
+        return False
+    return None
+
+
 def _clean_value(value, cast):
     """Strip units/comments and cast to desired type."""
     value = value.split()[0].replace(";", "")
@@ -70,6 +79,46 @@ def extract_incar_settings(text):
                     incar[key] = _clean_value(parts[1], cast)
 
     return incar
+
+
+def _parse_array_values(value, cast):
+    values = []
+    for token in value.replace(";", " ").split():
+        try:
+            values.append(cast(token))
+        except ValueError:
+            continue
+    return values
+
+
+def extract_hubbard_u_settings(text):
+    """Extract LDA+U settings from OUTCAR text."""
+    hubbard = {
+        "LDAU": None,
+        "LDAUL": None,
+        "LDAUU": None,
+        "LDAUJ": None,
+    }
+
+    for line in text.splitlines():
+        stripped = line.strip()
+
+        if stripped.startswith("LDAU") and "=" in stripped:
+            key, raw = [part.strip() for part in stripped.split("=", 1)]
+
+            if key == "LDAU":
+                hubbard["LDAU"] = _parse_bool_token(raw)
+            elif key == "LDAUL":
+                hubbard["LDAUL"] = _parse_array_values(raw, int)
+            elif key == "LDAUU":
+                hubbard["LDAUU"] = _parse_array_values(raw, float)
+            elif key == "LDAUJ":
+                hubbard["LDAUJ"] = _parse_array_values(raw, float)
+
+    if all(value is None for value in hubbard.values()):
+        return None
+
+    return hubbard
 
 
 # ============================================================
@@ -542,6 +591,7 @@ def parse_vasp_frequency(outcar_path, average_pairs=False):
     atoms = read(outcar_path)
 
     incar = extract_incar_settings(text)
+    hubbard_u = extract_hubbard_u_settings(text)
     potcar = extract_potcar_info(text)
     vasp_version = extract_vasp_version(text)
     executed_at = extract_execution_timestamp(text)
@@ -597,6 +647,7 @@ def parse_vasp_frequency(outcar_path, average_pairs=False):
             "executed_at": executed_at,
             "type": "frequency",
             "incar": incar,
+            "hubbard_u": hubbard_u,
             "potcar": potcar,
         },
         "energy": {
@@ -619,6 +670,7 @@ def parse_vasp_optimization(outcar_path):
     atoms = _read_last_optimization_atoms(outcar_path, text)
 
     incar = extract_incar_settings(text)
+    hubbard_u = extract_hubbard_u_settings(text)
     potcar = extract_potcar_info(text)
     vasp_version = extract_vasp_version(text)
     executed_at = extract_execution_timestamp(text)
@@ -651,6 +703,7 @@ def parse_vasp_optimization(outcar_path):
             "executed_at": executed_at,
             "type": "optimization",
             "incar": incar,
+            "hubbard_u": hubbard_u,
             "potcar": potcar,
         },
         "energy": {
@@ -670,6 +723,7 @@ def parse_ase_vibrations(outcar_path):
     atoms = _read_last_optimization_atoms(outcar_path, text)
 
     incar = extract_incar_settings(text)
+    hubbard_u = extract_hubbard_u_settings(text)
     potcar = extract_potcar_info(text)
     vasp_version = extract_vasp_version(text)
     executed_at = extract_execution_timestamp(text)
@@ -697,6 +751,7 @@ def parse_ase_vibrations(outcar_path):
             "executed_at": executed_at,
             "type": "frequency",
             "incar": incar,
+            "hubbard_u": hubbard_u,
             "potcar": potcar,
         },
         "energy": {

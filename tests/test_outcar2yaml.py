@@ -12,6 +12,7 @@ from pymkmkit.vasp_freq import (
     parse_ase_vibrations,
     parse_vasp_frequency,
     parse_vasp_optimization,
+    extract_hubbard_u_settings,
 )
 from pymkmkit.yaml_writer import write_yaml
 
@@ -38,6 +39,26 @@ def _outcar_sigma0_energies(outcar_path):
 
     return energies
 
+
+
+
+def test_extract_hubbard_u_settings_parses_ldau_block():
+    text = """
+LDAU = .TRUE.
+
+   LDAUL = -1 3 -1 -1
+   LDAUU = 0.000 4.500 0.000 0.000
+  LDAUJ = 0.000 0.000 0.000 0.000
+"""
+
+    hubbard = extract_hubbard_u_settings(text)
+
+    assert hubbard == {
+        "LDAU": True,
+        "LDAUL": [-1, 3, -1, -1],
+        "LDAUU": [0.0, 4.5, 0.0, 0.0],
+        "LDAUJ": [0.0, 0.0, 0.0, 0.0],
+    }
 
 def test_parse_outcar_zip(tmp_path):
     outcar = _extract_outcar("OUTCAR_Ni311_C.zip", tmp_path)
