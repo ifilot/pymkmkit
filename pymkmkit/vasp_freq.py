@@ -390,6 +390,90 @@ def extract_perturbed_hessian(text):
     return row_order, matrix
 
 
+def extract_hessian_from_dynamical_modes(text, atoms):
+    """Reconstruct Hessian from OUTCAR dynamical-mode eigenpairs.
+
+    This is a fallback for calculations where VASP prints only the
+    ``Eigenvectors and eigenvalues of the dynamical matrix`` section
+    (and no explicit ``SECOND DERIVATIVES`` block).
+    """
+    lines = text.splitlines()
+    start = None
+
+    for idx, line in enumerate(lines):
+        if "Eigenvectors and eigenvalues of the dynamical matrix" in line:
+            start = idx
+
+    if start is None:
+        return None, None
+
+    n_atoms = len(atoms)
+    n_dof = 3 * n_atoms
+    factor_cm = 521.4708983725064
+
+    eigvals = []
+    eigvecs = []
+
+    i = start + 1
+    while i < len(lines) and len(eigvals) < n_dof:
+        line = lines[i]
+        if " f  =" not in line and " f/i=" not in line:
+            i += 1
+            continue
+
+        freq_match = re.search(r"([-+]?\d*\.?\d+)\s+cm-1", line)
+        if not freq_match:
+            i += 1
+            continue
+
+        is_imag = " f/i=" in line
+        cm_value = float(freq_match.group(1))
+        eigval = (cm_value / factor_cm) ** 2
+        if is_imag:
+            eigval = -eigval
+        eigvals.append(eigval)
+
+        i += 1
+        while i < len(lines) and "dx" not in lines[i]:
+            i += 1
+
+        if i >= len(lines):
+            break
+
+        i += 1
+        mode_vec = []
+        while i < len(lines) and len(mode_vec) < n_dof:
+            row = lines[i].split()
+            if len(row) < 6:
+                break
+
+            try:
+                mode_vec.extend([float(row[-3]), float(row[-2]), float(row[-1])])
+            except ValueError:
+                break
+
+            i += 1
+
+        if len(mode_vec) != n_dof:
+            return None, None
+
+        eigvecs.append(mode_vec)
+
+    if len(eigvals) != n_dof or len(eigvecs) != n_dof:
+        return None, None
+
+    vectors = np.array(eigvecs, dtype=float).T
+    dynamical = vectors @ np.diag(np.array(eigvals, dtype=float)) @ vectors.T
+
+    dof_labels = [f"{i + 1}{axis}" for i in range(n_atoms) for axis in "XYZ"]
+    masses = np.repeat(atoms.get_masses(), 3)
+    mass_factor = np.sqrt(np.outer(masses, masses))
+    hessian = -dynamical * mass_factor
+    hessian = 0.5 * (hessian + hessian.T)
+
+    return dof_labels, hessian.tolist()
+
+
 def _split_frequencies_from_partial_hessian(dof_labels, hessian_matrix, atoms, tol_cm=1e-3):
     """Recover real and imaginary vibrational frequencies from a partial Hessian."""
     dof_masses = []
@@ -614,6 +698,8 @@ def parse_vasp_frequency(outcar_path, average_pairs=False):
     executed_at = extract_execution_timestamp(text)
     real_freqs, imag_freqs = extract_frequencies(text)
     hessian_dofs, hessian_matrix = extract_perturbed_hessian(text)
+    if not (hessian_dofs and hessian_matrix):
+        hessian_dofs, hessian_matrix = extract_hessian_from_dynamical_modes(text, atoms)
     ionic_energies = extract_ionic_energies(text)
     if ionic_energies:
         electronic_energy = ionic_energies[0]

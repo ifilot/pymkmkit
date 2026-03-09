@@ -232,3 +232,15 @@ def test_parse_ase_vibrations_detects_imaginary_mode_for_ts(tmp_path):
     assert len(vibrations["imaginary_cm-1"]) == 1
     assert vibrations["imaginary_cm-1"][0] < 0.0
     assert all(freq > 0.0 for freq in vibrations["frequencies_cm-1"])
+
+
+def test_parse_frequency_reconstructs_hessian_from_modes_when_block_missing(tmp_path):
+    outcar = _extract_outcar("OUTCAR_CO2.zip", tmp_path) / "OUTCAR"
+
+    data = parse_vasp_frequency(outcar)
+    partial = data["vibrations"].get("partial_hessian")
+
+    assert partial is not None
+    assert len(partial["dof_labels"]) == 9
+    assert len(partial["matrix"]) == 9
+    assert all(len(row) == 9 for row in partial["matrix"])
