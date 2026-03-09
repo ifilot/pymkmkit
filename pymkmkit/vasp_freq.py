@@ -390,6 +390,39 @@ def extract_perturbed_hessian(text):
     return row_order, matrix
 
 
+def _split_frequencies_from_partial_hessian(dof_labels, hessian_matrix, atoms, tol_cm=1e-3):
+    """Recover real and imaginary vibrational frequencies from a partial Hessian."""
+    dof_masses = []
+    for label in dof_labels:
+        match = _DOF_LABEL_RE.match(label)
+        if not match:
+            raise ValueError(f"Invalid DOF label: {label}")
+        atom_index = int(match.group(1)) - 1
+        dof_masses.append(atoms[atom_index].mass)
+
+    hessian = np.array(hessian_matrix, dtype=float)
+    mass = np.sqrt(np.outer(dof_masses, dof_masses))
+    dynamical = -hessian / mass
+    eigenvals = np.linalg.eigvalsh(dynamical)
+
+    # Conversion: sqrt(eV/amu)/Ang -> cm-1
+    factor_cm = 521.4708983725064
+    tol_eig = (tol_cm / factor_cm) ** 2
+
+    real = [
+        float(factor_cm * np.sqrt(value))
+        for value in eigenvals
+        if value > tol_eig
+    ]
+    imaginary = [
+        float(-factor_cm * np.sqrt(abs(value)))
+        for value in eigenvals
+        if value < -tol_eig
+    ]
+
+    return sorted(real, reverse=True), sorted(imaginary)
+
+
 def frequencies_from_partial_hessian(dof_labels, hessian_matrix, atoms):
     """Recover vibrational frequencies from a partial Hessian matrix.
 
@@ -407,24 +440,8 @@ def frequencies_from_partial_hessian(dof_labels, hessian_matrix, atoms):
     list[float]
         Frequencies in cm⁻¹ sorted in descending order.
     """
-    dof_masses = []
-    for label in dof_labels:
-        match = _DOF_LABEL_RE.match(label)
-        if not match:
-            raise ValueError(f"Invalid DOF label: {label}")
-        atom_index = int(match.group(1)) - 1
-        dof_masses.append(atoms[atom_index].mass)
-
-    hessian = np.array(hessian_matrix, dtype=float)
-    mass = np.sqrt(np.outer(dof_masses, dof_masses))
-    dynamical = -hessian / mass
-    eigenvals = np.linalg.eigvalsh(dynamical)
-
-    # Conversion: sqrt(eV/amu)/Ang -> cm-1
-    factor_cm = 521.4708983725064
-    frequencies = factor_cm * np.sqrt(np.maximum(eigenvals, 0.0))
-
-    return sorted((float(v) for v in frequencies), reverse=True)
+    real, _imag = _split_frequencies_from_partial_hessian(dof_labels, hessian_matrix, atoms)
+    return real
 
 
 _ASE_DISPLACEMENT_RE = re.compile(r"^cache\.(\d+)([xyz])([+-])\.json$")
@@ -731,7 +748,11 @@ def parse_ase_vibrations(outcar_path):
     electronic_energy = ionic_energies[-1] if ionic_energies else float(atoms.get_potential_energy())
 
     hessian_dofs, hessian_matrix = extract_ase_vibration_hessian(outcar_path)
-    frequencies = frequencies_from_partial_hessian(hessian_dofs, hessian_matrix, atoms)
+    frequencies, imaginary = _split_frequencies_from_partial_hessian(
+        hessian_dofs,
+        hessian_matrix,
+        atoms,
+    )
 
     return {
         "pymkmkit": {
@@ -759,7 +780,7 @@ def parse_ase_vibrations(outcar_path):
         },
         "vibrations": {
             "frequencies_cm-1": frequencies,
-            "imaginary_cm-1": None,
+            "imaginary_cm-1": imaginary if imaginary else None,
             "partial_hessian": {
                 "dof_labels": hessian_dofs,
                 "matrix": hessian_matrix,

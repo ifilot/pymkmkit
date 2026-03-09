@@ -220,3 +220,15 @@ def test_extract_ase_vibration_hessian_recovers_nonzero_frequencies(tmp_path):
     assert len(recovered) == 12
     assert recovered[0] == pytest.approx(1809.4, abs=5.0)
     assert recovered[-1] > 10.0
+
+
+def test_parse_ase_vibrations_detects_imaginary_mode_for_ts(tmp_path):
+    root = _extract_outcar("CeO2_Pd4_COox.zip", tmp_path)
+
+    data = parse_ase_vibrations(root / "OUTCAR")
+    vibrations = data["vibrations"]
+
+    assert vibrations["imaginary_cm-1"] is not None
+    assert len(vibrations["imaginary_cm-1"]) == 1
+    assert vibrations["imaginary_cm-1"][0] < 0.0
+    assert all(freq > 0.0 for freq in vibrations["frequencies_cm-1"])
