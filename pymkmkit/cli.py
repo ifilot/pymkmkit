@@ -3,7 +3,11 @@ from pathlib import Path
 import click
 
 from pymkmkit.network_reader import build_ped, evaluate_paths, read_network
-from pymkmkit.vasp_freq import parse_vasp_frequency, parse_vasp_optimization
+from pymkmkit.vasp_freq import (
+    parse_ase_vibrations,
+    parse_vasp_frequency,
+    parse_vasp_optimization,
+)
 from pymkmkit.yaml_writer import write_yaml
 
 
@@ -103,6 +107,29 @@ def opt2yaml(outcar, output):
     _ensure_output_dir(output)
 
     data = parse_vasp_optimization(outcar)
+
+    write_yaml(data, output)
+
+    click.echo(f"YAML written to: {output}")
+
+
+@cli.command("asevib2yaml")
+@click.argument(
+    "outcar",
+    type=click.Path(exists=True, dir_okay=False)
+)
+@click.option(
+    "-o", "--output",
+    required=True,
+    type=click.Path(dir_okay=False),
+    help="Output YAML file (required)."
+)
+def asevib2yaml(outcar, output):
+    """Convert OUTCAR + sibling ``vibX`` ASE caches to a single YAML file."""
+
+    _ensure_output_dir(output)
+
+    data = parse_ase_vibrations(outcar)
 
     write_yaml(data, output)
 

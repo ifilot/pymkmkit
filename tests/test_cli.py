@@ -15,7 +15,10 @@ def _extract_outcar(zip_name, tmp_path):
     zip_path = DATA_DIR / zip_name
     with zipfile.ZipFile(zip_path, "r") as z:
         z.extractall(tmp_path)
-    return tmp_path / zip_name.replace(".zip", "")
+    default = tmp_path / zip_name.replace(".zip", "")
+    if default.exists():
+        return default
+    return tmp_path
 
 
 def test_freq2yaml_cli_writes_frequency_yaml(tmp_path):
@@ -56,6 +59,25 @@ def test_opt2yaml_cli_writes_optimization_yaml(tmp_path):
     assert parsed["calculation"]["version"] == "5.3.5"
     assert parsed["calculation"]["executed_at"] == "2019-05-22T13:55:02Z"
     assert "vibrations" not in parsed
+
+
+def test_asevib2yaml_cli_writes_frequency_yaml_from_vib_folders(tmp_path):
+    root = _extract_outcar("CeO2_Pd4_CO.zip", tmp_path)
+    outcar = root / "OUTCAR"
+    output = tmp_path / "asevib.yaml"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["asevib2yaml", str(outcar), "-o", str(output)],
+    )
+
+    assert result.exit_code == 0
+    assert output.exists()
+
+    parsed = yaml.safe_load(output.read_text())
+    assert parsed["calculation"]["type"] == "frequency"
+    assert len(parsed["vibrations"]["partial_hessian"]["dof_labels"]) == 12
 
 
 def test_read_network_cli_prints_reaction_and_barriers(tmp_path):

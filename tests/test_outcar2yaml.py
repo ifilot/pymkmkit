@@ -7,7 +7,9 @@ from ase.io import read
 
 from pymkmkit.vasp_freq import (
     average_mode_pairs,
+    extract_ase_vibration_hessian,
     frequencies_from_partial_hessian,
+    parse_ase_vibrations,
     parse_vasp_frequency,
     parse_vasp_optimization,
 )
@@ -21,7 +23,10 @@ def _extract_outcar(zip_name, tmp_path):
     zip_path = DATA_DIR / zip_name
     with zipfile.ZipFile(zip_path, "r") as z:
         z.extractall(tmp_path)
-    return tmp_path / zip_name.replace(".zip", "")
+    default = tmp_path / zip_name.replace(".zip", "")
+    if default.exists():
+        return default
+    return tmp_path
 
 
 def _outcar_sigma0_energies(outcar_path):
@@ -152,3 +157,45 @@ def test_partial_hessian_roundtrip_recovers_vasp_frequencies(tmp_path):
 
     for rec, rep in zip(recovered, reported):
         assert rec == pytest.approx(rep, abs=2.0)
+
+
+def test_parse_ase_vibrations_merges_vib_directories(tmp_path):
+    root = _extract_outcar("CeO2_Pd4_CO.zip", tmp_path)
+
+    data = parse_ase_vibrations(root / "OUTCAR")
+
+    partial = data["vibrations"]["partial_hessian"]
+    assert partial["dof_labels"] == [
+        "161X", "161Y", "161Z",
+        "162X", "162Y", "162Z",
+        "163X", "163Y", "163Z",
+        "250X", "250Y", "250Z",
+    ]
+    assert len(partial["matrix"]) == len(partial["dof_labels"])
+
+    freqs = data["vibrations"]["frequencies_cm-1"]
+    assert len(freqs) == len(partial["dof_labels"])
+    assert max(freqs) > 1000.0
+    assert any(freq > 50.0 for freq in freqs)
+
+
+def test_extract_ase_vibration_hessian_has_expected_shape(tmp_path):
+    root = _extract_outcar("CeO2_Pd4_CO.zip", tmp_path)
+
+    labels, matrix = extract_ase_vibration_hessian(root / "OUTCAR")
+
+    assert len(labels) == 12
+    assert len(matrix) == 12
+    assert all(len(row) == 12 for row in matrix)
+
+
+def test_extract_ase_vibration_hessian_recovers_nonzero_frequencies(tmp_path):
+    root = _extract_outcar("CeO2_Pd4_CO.zip", tmp_path)
+    outcar = root / "OUTCAR"
+
+    labels, matrix = extract_ase_vibration_hessian(outcar)
+    recovered = frequencies_from_partial_hessian(labels, matrix, read(outcar))
+
+    assert len(recovered) == 12
+    assert recovered[0] == pytest.approx(1809.4, abs=5.0)
+    assert recovered[-1] > 10.0

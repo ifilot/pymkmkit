@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import json
 import numpy as np
 from ase import Atoms
 from ase.io import read
@@ -376,6 +377,89 @@ def frequencies_from_partial_hessian(dof_labels, hessian_matrix, atoms):
 
     return sorted((float(v) for v in frequencies), reverse=True)
 
+
+_ASE_DISPLACEMENT_RE = re.compile(r"^cache\.(\d+)([xyz])([+-])\.json$")
+
+
+def _decode_ase_ndarray(value):
+    """Decode ASE's ``__ndarray__`` JSON encoding."""
+    if not isinstance(value, dict) or "__ndarray__" not in value:
+        return np.array(value, dtype=float)
+
+    shape, _dtype, payload = value["__ndarray__"]
+    return np.array(payload, dtype=float).reshape(shape)
+
+
+def _find_vibration_directories(outcar_path):
+    """Return sibling vibration folders named ``vib<integer>``."""
+    outcar = Path(outcar_path)
+    parent = outcar.parent
+
+    dirs = [
+        p for p in parent.iterdir()
+        if p.is_dir() and re.match(r"^vib\d+$", p.name)
+    ]
+
+    return sorted(dirs, key=lambda p: int(p.name[3:]))
+
+
+def extract_ase_vibration_hessian(outcar_path, delta=0.01):
+    """Extract a merged partial Hessian from ASE vibration cache folders."""
+    vib_dirs = _find_vibration_directories(outcar_path)
+    if not vib_dirs:
+        raise ValueError("No vibration folders (vib0, vib1, ...) found next to OUTCAR")
+
+    displacements = {}
+
+    for vib_dir in vib_dirs:
+        for json_path in vib_dir.glob("cache.*.json"):
+            if json_path.name == "cache.eq.json":
+                continue
+
+            match = _ASE_DISPLACEMENT_RE.match(json_path.name)
+            if not match:
+                continue
+
+            atom_index = int(match.group(1))
+            axis = match.group(2)
+            sign = match.group(3)
+            key = (atom_index, axis)
+
+            parsed = json.loads(json_path.read_text())
+            forces = _decode_ase_ndarray(parsed["forces"])
+
+            displacements.setdefault(key, {})[sign] = forces
+
+    if not displacements:
+        raise ValueError("No ASE displacement files found in vib folders")
+
+    for key, signed_forces in displacements.items():
+        if "+" not in signed_forces or "-" not in signed_forces:
+            raise ValueError(f"Missing + or - displacement for {key[0]}{key[1]}")
+
+    selected_atoms = sorted({idx for idx, _ in displacements.keys()})
+    dof_labels = [f"{idx + 1}{axis.upper()}" for idx in selected_atoms for axis in "xyz"]
+
+    rows = []
+    for idx in selected_atoms:
+        for axis in "xyz":
+            signed_forces = displacements.get((idx, axis))
+            if signed_forces is None:
+                raise ValueError(f"Missing displacement data for {idx}{axis}")
+
+            # ASE caches store forces, while pymkmkit downstream assumes the
+            # VASP partial-Hessian sign convention used by
+            # ``frequencies_from_partial_hessian`` (which applies a leading
+            # minus sign before mass-weighting). Therefore we build rows as
+            # (F+ - F-) / (2*delta), i.e. the negative of ASE's internal H.
+            derivative = (signed_forces["+"] - signed_forces["-"]) / (2.0 * delta)
+            rows.append(derivative[selected_atoms].reshape(-1))
+
+    hessian = np.array(rows, dtype=float)
+    hessian = 0.5 * (hessian + hessian.T)
+
+    return dof_labels, hessian.tolist()
+
 # ============================================================
 # Structure utilities
 # ============================================================
@@ -571,6 +655,60 @@ def parse_vasp_optimization(outcar_path):
         },
         "energy": {
             "electronic": electronic_energy,
+        },
+    }
+
+
+def parse_ase_vibrations(outcar_path):
+    """Parse ASE vibration cache folders plus OUTCAR geometry into YAML schema."""
+    path = Path(outcar_path)
+
+    if not path.exists():
+        raise FileNotFoundError(outcar_path)
+
+    text = path.read_text(errors="ignore")
+    atoms = _read_last_optimization_atoms(outcar_path, text)
+
+    incar = extract_incar_settings(text)
+    potcar = extract_potcar_info(text)
+    vasp_version = extract_vasp_version(text)
+    executed_at = extract_execution_timestamp(text)
+    ionic_energies = extract_ionic_energies(text)
+    electronic_energy = ionic_energies[-1] if ionic_energies else float(atoms.get_potential_energy())
+
+    hessian_dofs, hessian_matrix = extract_ase_vibration_hessian(outcar_path)
+    frequencies = frequencies_from_partial_hessian(hessian_dofs, hessian_matrix, atoms)
+
+    return {
+        "pymkmkit": {
+            "version": get_version(),
+            "generated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        },
+        "structure": {
+            "formula": formula_from_atom_order(atoms),
+            "n_atoms": len(atoms),
+            "lattice_vectors": lattice_vectors(atoms),
+            "coordinates_direct": geometry_direct_strings(atoms),
+            "pbc": [bool(x) for x in atoms.pbc],
+        },
+        "calculation": {
+            "code": "VASP",
+            "version": vasp_version,
+            "executed_at": executed_at,
+            "type": "frequency",
+            "incar": incar,
+            "potcar": potcar,
+        },
+        "energy": {
+            "electronic": electronic_energy,
+        },
+        "vibrations": {
+            "frequencies_cm-1": frequencies,
+            "imaginary_cm-1": None,
+            "partial_hessian": {
+                "dof_labels": hessian_dofs,
+                "matrix": hessian_matrix,
+            },
         },
     }
 
