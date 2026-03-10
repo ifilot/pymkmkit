@@ -12,3 +12,10 @@ dependencies = [
 
 [project.scripts]
 pymkmkit = "pymkmkit.cli:cli"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["pymkmkit*"]
