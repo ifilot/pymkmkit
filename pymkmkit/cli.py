@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import click
+from rich.console import Console
 
 from pymkmkit.network_reader import build_ped, evaluate_paths, read_network
 from pymkmkit.vasp_freq import (
@@ -30,6 +31,14 @@ def _ensure_output_dir(output):
     """
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _format_energy(value: float, *, unit: str) -> str:
+    """Format an energy value with unit-specific precision and alignment."""
+    if unit == "kj/mol":
+        converted = value * 96.48533212
+        return f"{converted:>8.1f} kJ/mol"
+    return f"{value:>8.4f} eV"
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +153,14 @@ def asevib2yaml(outcar, output):
     "network_file",
     type=click.Path(exists=True, dir_okay=False)
 )
-def read_network_command(network_file):
+@click.option(
+    "--unit",
+    type=click.Choice(["ev", "kj/mol"], case_sensitive=False),
+    default="ev",
+    show_default=True,
+    help="Energy unit for displayed values.",
+)
+def read_network_command(network_file, unit):
     """Load a network definition and print per-step barrier information.
 
     Parameters
@@ -154,26 +170,30 @@ def read_network_command(network_file):
     """
 
     steps = read_network(network_file)
+    console = Console()
 
     for step in steps:
-        click.echo(f"Reaction: {step.reaction}")
+        console.print(f"Reaction: [cyan]{step.reaction}[/cyan]")
         if step.step_type == "ads":
-            click.echo(
+            console.print(
                 "  Adsorption heat: "
-                f"{step.forward_total_barrier:.6f} eV "
-                f"(inc. ZPE-corr: {step.forward_zpe_correction:.6f})"
+                f"[green]{_format_energy(step.forward_total_barrier, unit=unit)}[/green] "
+                "(inc. ZPE-corr: "
+                f"[green]{_format_energy(step.forward_zpe_correction, unit=unit)}[/green])"
             )
             continue
 
-        click.echo(
+        console.print(
             "  Forward barrier: "
-            f"{step.forward_total_barrier:.6f} eV "
-            f"(inc. ZPE-corr: {step.forward_zpe_correction:.6f})"
+            f"[green]{_format_energy(step.forward_total_barrier, unit=unit)}[/green] "
+            "(inc. ZPE-corr: "
+            f"[green]{_format_energy(step.forward_zpe_correction, unit=unit)}[/green])"
         )
-        click.echo(
+        console.print(
             "  Reverse barrier: "
-            f"{step.reverse_total_barrier:.6f} eV "
-            f"(inc. ZPE-corr: {step.reverse_zpe_correction:.6f})"
+            f"[green]{_format_energy(step.reverse_total_barrier, unit=unit)}[/green] "
+            "(inc. ZPE-corr: "
+            f"[green]{_format_energy(step.reverse_zpe_correction, unit=unit)}[/green])"
         )
 
 

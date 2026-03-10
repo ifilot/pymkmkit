@@ -6,7 +6,8 @@ dependencies = [
     "pyyaml", 
     "numpy",
     "ase",
-    "matplotlib"
+    "matplotlib",
+    "rich"
 ]
 
 [project.scripts]
