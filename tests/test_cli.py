@@ -1306,3 +1306,150 @@ network:
     assert edge["nodes"] == ["A*", "B*"]
     assert edge["forward"] == pytest.approx(0.3)
     assert edge["backward"] == pytest.approx(-0.3)
+
+
+def test_network2fnf_cli_fails_if_output_exists_without_merge(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    (states_dir / "a.yaml").write_text(
+        """
+energy:
+  electronic: -1.0
+vibrations:
+  frequencies_cm-1: []
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (states_dir / "b.yaml").write_text(
+        """
+energy:
+  electronic: -0.8
+vibrations:
+  frequencies_cm-1: []
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: A*
+    file: states/a.yaml
+  - name: B*
+    file: states/b.yaml
+network:
+  - name: ads step
+    type: ads
+    reaction: A* => B*
+    is:
+      - name: A*
+    fs:
+      - name: B*
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "fnf.yaml"
+    output.write_text("nodes: []\nedges: []\n", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["network2fnf", str(network_file), "-o", str(output)])
+
+    assert result.exit_code != 0
+    assert "Output file already exists" in result.output
+
+
+def test_network2fnf_cli_merge_adds_and_skips_entries(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    for name, energy in (("a.yaml", -1.0), ("b.yaml", -0.6), ("c.yaml", -0.3)):
+        (states_dir / name).write_text(
+            f"""
+energy:
+  electronic: {energy}
+vibrations:
+  frequencies_cm-1: []
+  paired_modes_averaged: true
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: A*
+    file: states/a.yaml
+  - name: B*
+    file: states/b.yaml
+  - name: C*
+    file: states/c.yaml
+network:
+  - name: skip me
+    type: ads
+    reaction: A* => B*
+    is:
+      - name: A*
+    fs:
+      - name: B*
+  - name: add me
+    type: ads
+    reaction: B* => C*
+    is:
+      - name: B*
+    fs:
+      - name: C*
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "fnf.yaml"
+    output.write_text(
+        """
+pymkmkit:
+  version: 0.1.0
+  units: eV
+  energy_type: elec+zpe
+nodes:
+  - label: A*
+  - label: B*
+edges:
+  - name: existing AB
+    type: ads
+    nodes: [B*, A*]
+    ads: 0.1
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["network2fnf", str(network_file), "-o", str(output), "--merge"],
+    )
+
+    assert result.exit_code == 0
+    assert "Added nodes:" in result.output
+    assert "  + C*" in result.output
+    assert "Skipped nodes:" in result.output
+    assert "  - A*" in result.output
+    assert "  - B*" in result.output
+    assert "Added elementary reaction steps:" in result.output
+    assert "  + add me (B* <-> C*)" in result.output
+    assert "Skipped elementary reaction steps:" in result.output
+    assert "  - skip me (A* <-> B*)" in result.output
+
+    payload = yaml.safe_load(output.read_text())
+    assert payload["nodes"] == [{"label": "A*"}, {"label": "B*"}, {"label": "C*"}]
+    assert [edge["name"] for edge in payload["edges"]] == ["existing AB", "add me"]
