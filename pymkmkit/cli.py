@@ -180,7 +180,7 @@ def read_network_command(network_file, unit):
     console = Console()
 
     for step in steps:
-        console.print(f"Reaction: [cyan]{step.reaction}[/cyan]")
+        console.print(f"Reaction: [cyan]{step.reaction}[/cyan] [plum1]({step.step_type})[/plum1]")
         if step.step_type == "ads":
             console.print(
                 "  Adsorption heat: "

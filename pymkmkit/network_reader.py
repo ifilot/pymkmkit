@@ -308,6 +308,44 @@ def _compute_adsorption_heat(
     return electronic_heat, zpe_correction, total_heat, full_equation
 
 
+def _compute_rearrangement_energy(
+    step_data: dict,
+    states: dict[str, State],
+) -> tuple[float, float, float, str]:
+    """Compute electronic and ZPE-corrected energy for a rearrangement step."""
+    fs_energy, fs_energy_expr = _sum_energy(step_data.get("fs", []), states)
+    is_energy, is_energy_expr = _sum_energy(step_data.get("is", []), states)
+
+    normalization = step_data.get("normalization", 1)
+    try:
+        normalization_value = float(normalization)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid normalization value: {normalization}") from exc
+
+    if normalization_value == 0:
+        raise ValueError("Normalization cannot be zero")
+
+    electronic_energy = (fs_energy - is_energy) / normalization_value
+    electronic_equation = (
+        f"({fs_energy_expr} - ({is_energy_expr})) / {normalization_value:g}"
+    )
+
+    fs_zpe, fs_zpe_expr = _sum_zpe(step_data.get("fs", []), states, normalization_value)
+    is_zpe, is_zpe_expr = _sum_zpe(step_data.get("is", []), states, normalization_value)
+
+    zpe_correction = fs_zpe - is_zpe
+    zpe_equation = f"({fs_zpe_expr} - ({is_zpe_expr}))"
+
+    total_energy = electronic_energy + zpe_correction
+    full_equation = (
+        f"E_el: {electronic_equation}; "
+        f"ZPE corr: {zpe_equation}; "
+        f"Total: ({electronic_equation}) + ({zpe_equation})"
+    )
+
+    return electronic_energy, zpe_correction, total_energy, full_equation
+
+
 def _validate_surface_ts_consistency(step: dict) -> None:
     """Validate that single-term forward/backward TS definitions match."""
     step_name = step.get("name", "unnamed_step")
@@ -333,9 +371,9 @@ def read_network(network_file: str | Path) -> list[ElementaryStep]:
     steps: list[ElementaryStep] = []
     for step in network_data.get("network", []):
         step_type = step.get("type", "surf")
-        if step_type not in {"surf", "ads"}:
+        if step_type not in {"surf", "ads", "rearrangement"}:
             raise ValueError(
-                f"Invalid network step type '{step_type}'. Expected 'surf' or 'ads'."
+                f"Invalid network step type '{step_type}'. Expected 'surf', 'ads', or 'rearrangement'."
             )
 
         if step_type == "ads":
@@ -352,7 +390,7 @@ def read_network(network_file: str | Path) -> list[ElementaryStep]:
             reaction_heat_el = forward_el
             reaction_heat_zpe = forward_zpe
             reaction_heat_total = forward_total
-        else:
+        elif step_type == "surf":
             _validate_surface_ts_consistency(step)
             forward_data = step.get("forward", {})
             backward_data = step.get("backward", {})
@@ -372,6 +410,20 @@ def read_network(network_file: str | Path) -> list[ElementaryStep]:
             reaction_heat_el = forward_el - reverse_el
             reaction_heat_zpe = forward_zpe - reverse_zpe
             reaction_heat_total = forward_total - reverse_total
+        else:
+            (
+                forward_el,
+                forward_zpe,
+                forward_total,
+                forward_eq,
+            ) = _compute_rearrangement_energy(step, states)
+            reverse_el = -forward_el
+            reverse_zpe = -forward_zpe
+            reverse_total = -forward_total
+            reverse_eq = f"-({forward_eq})"
+            reaction_heat_el = forward_el
+            reaction_heat_zpe = forward_zpe
+            reaction_heat_total = forward_total
 
         steps.append(
             ElementaryStep(
@@ -456,9 +508,9 @@ def build_fnf(network_file: str | Path, *, unit: str = "ev") -> dict:
     edges: list[dict] = []
     for step in network_data.get("network", []):
         step_type = step.get("type", "surf")
-        if step_type not in {"surf", "ads"}:
+        if step_type not in {"surf", "ads", "rearrangement"}:
             raise ValueError(
-                f"Invalid network step type '{step_type}'. Expected 'surf' or 'ads'."
+                f"Invalid network step type '{step_type}'. Expected 'surf', 'ads', or 'rearrangement'."
             )
 
         edge = {
@@ -484,7 +536,7 @@ def build_fnf(network_file: str | Path, *, unit: str = "ev") -> dict:
             edge["nodes"] = [forward_is[0]["name"], backward_is[0]["name"]]
             edge["forward"] = float(_convert_energy_unit(forward_total, unit))
             edge["backward"] = float(_convert_energy_unit(backward_total, unit))
-        else:
+        elif step_type == "ads":
             _, _, adsorption_total, _ = _compute_adsorption_heat(step, states)
 
             is_names = [
@@ -505,6 +557,20 @@ def build_fnf(network_file: str | Path, *, unit: str = "ev") -> dict:
 
             edge["nodes"] = filtered_nodes
             edge["ads"] = float(_convert_energy_unit(adsorption_total, unit))
+        else:
+            _, _, rearrangement_total, _ = _compute_rearrangement_energy(step, states)
+
+            is_names = [term["name"] for term in step.get("is", [])]
+            fs_names = [term["name"] for term in step.get("fs", [])]
+            filtered_nodes = list(dict.fromkeys(is_names + fs_names))
+            if len(filtered_nodes) != 2:
+                raise ValueError(
+                    f"Rearrangement step '{edge['name']}' must map to exactly two nodes"
+                )
+
+            edge["nodes"] = filtered_nodes
+            edge["forward"] = float(_convert_energy_unit(rearrangement_total, unit))
+            edge["backward"] = float(_convert_energy_unit(-rearrangement_total, unit))
 
         edges.append(edge)
 

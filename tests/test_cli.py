@@ -162,7 +162,7 @@ network:
     result = runner.invoke(cli, ["read_network", str(network_file)])
 
     assert result.exit_code == 0
-    assert "Reaction: IS* => FS*" in result.output
+    assert "Reaction: IS* => FS* (surf)" in result.output
     assert "Forward barrier:" in result.output
     assert "1.0310 eV" in result.output
     assert "0.0310 eV" in result.output
@@ -386,7 +386,7 @@ network:
     result = runner.invoke(cli, ["read_network", str(network_file)])
 
     assert result.exit_code == 0
-    assert "Reaction: GAS + * => ADS*" in result.output
+    assert "Reaction: GAS + * => ADS* (ads)" in result.output
     assert "Adsorption heat:" in result.output
     assert "-0.2814 eV" in result.output
     assert "0.0186 eV" in result.output
@@ -454,7 +454,7 @@ network:
     result = runner.invoke(cli, ["read_network", str(network_file), "--unit", "kj/mol"])
 
     assert result.exit_code == 0
-    assert "Reaction: IS* => TS*" in result.output
+    assert "Reaction: IS* => TS* (surf)" in result.output
     assert "Forward barrier:" in result.output
     assert "99.5 kJ/mol" in result.output
     assert "3.0 kJ/mol" in result.output
@@ -1119,3 +1119,190 @@ network:
 
     with pytest.raises(ValueError, match="must use the same TS state"):
         read_network(network_file)
+
+
+def test_read_network_supports_rearrangement_steps(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    (states_dir / "is.yaml").write_text(
+        """
+energy:
+  electronic: -10.0
+vibrations:
+  frequencies_cm-1: [1000.0, 2000.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (states_dir / "fs.yaml").write_text(
+        """
+energy:
+  electronic: -9.5
+vibrations:
+  frequencies_cm-1: [1200.0, 2100.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: CO_2O*
+    file: states/is.yaml
+  - name: CO2_O*
+    file: states/fs.yaml
+network:
+  - name: CO oxidation via LH1
+    type: rearrangement
+    reaction: CO_2O* => CO2_O*
+    is:
+      - name: CO_2O*
+    fs:
+      - name: CO2_O*
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    steps = read_network(network_file)
+
+    assert len(steps) == 1
+    step = steps[0]
+    assert step.step_type == "rearrangement"
+    assert step.forward_barrier_electronic == pytest.approx(0.5)
+    assert step.reverse_barrier_electronic == pytest.approx(-0.5)
+    assert step.forward_zpe_correction == pytest.approx(0.5 * 300.0 * 1.239841984e-4)
+    assert step.reverse_zpe_correction == pytest.approx(-0.5 * 300.0 * 1.239841984e-4)
+    assert step.forward_total_barrier == pytest.approx(
+        0.5 + 0.5 * 300.0 * 1.239841984e-4
+    )
+    assert step.reverse_total_barrier == pytest.approx(
+        -(0.5 + 0.5 * 300.0 * 1.239841984e-4)
+    )
+    assert step.reaction_heat_total == pytest.approx(step.forward_total_barrier)
+
+
+
+
+def test_read_network_cli_displays_rearrangement_type(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    (states_dir / "is.yaml").write_text(
+        """
+energy:
+  electronic: -10.0
+vibrations:
+  frequencies_cm-1: []
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (states_dir / "fs.yaml").write_text(
+        """
+energy:
+  electronic: -9.0
+vibrations:
+  frequencies_cm-1: []
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: CO_2O*
+    file: states/is.yaml
+  - name: CO2_O*
+    file: states/fs.yaml
+network:
+  - name: CO oxidation via LH1
+    type: rearrangement
+    reaction: CO_2O* => CO2_O*
+    is:
+      - name: CO_2O*
+    fs:
+      - name: CO2_O*
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["read_network", str(network_file)])
+
+    assert result.exit_code == 0
+    assert "Reaction: CO_2O* => CO2_O* (rearrangement)" in result.output
+    assert "Forward barrier:" in result.output
+    assert "Reverse barrier:" in result.output
+
+def test_network2fnf_cli_supports_rearrangement_edges(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    (states_dir / "is.yaml").write_text(
+        """
+energy:
+  electronic: -2.0
+vibrations:
+  frequencies_cm-1: []
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (states_dir / "fs.yaml").write_text(
+        """
+energy:
+  electronic: -1.7
+vibrations:
+  frequencies_cm-1: []
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: A*
+    file: states/is.yaml
+    type: surf
+  - name: B*
+    file: states/fs.yaml
+    type: surf
+network:
+  - name: rearrange
+    type: rearrangement
+    reaction: A* => B*
+    is:
+      - name: A*
+    fs:
+      - name: B*
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "fnf.yaml"
+    runner = CliRunner()
+    result = runner.invoke(cli, ["network2fnf", str(network_file), "-o", str(output)])
+
+    assert result.exit_code == 0
+    payload = yaml.safe_load(output.read_text())
+    edge = payload["edges"][0]
+    assert edge["type"] == "rearrangement"
+    assert edge["nodes"] == ["A*", "B*"]
+    assert edge["forward"] == pytest.approx(0.3)
+    assert edge["backward"] == pytest.approx(-0.3)
