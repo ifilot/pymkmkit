@@ -908,6 +908,180 @@ network:
     assert ads_edge["nodes"] == ["A*", "B*"]
 
 
+def test_network2fnf_cli_structures_copies_yaml_and_sets_node_structure_paths(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    (states_dir / "a.yaml").write_text(
+        """
+energy:
+  electronic: -1.0
+vibrations:
+  frequencies_cm-1: [100.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (states_dir / "b.yaml").write_text(
+        """
+energy:
+  electronic: -0.5
+vibrations:
+  frequencies_cm-1: [200.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (states_dir / "ts.yaml").write_text(
+        """
+energy:
+  electronic: 0.3
+vibrations:
+  frequencies_cm-1: [300.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: A*
+    file: states/a.yaml
+  - name: B*
+    file: states/b.yaml
+transition_states:
+  - name: TS
+    file: states/ts.yaml
+network:
+  - name: surf step
+    type: surf
+    reaction: A* => B*
+    forward:
+      ts:
+        - name: TS
+      is:
+        - name: A*
+    backward:
+      ts:
+        - name: TS
+      is:
+        - name: B*
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "fnf.yaml"
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["network2fnf", str(network_file), "-o", str(output), "--structures", "structures"],
+    )
+
+    assert result.exit_code == 0
+    payload = yaml.safe_load(output.read_text())
+
+    assert payload["nodes"] == [
+        {"label": "A*", "structure": "structures/a.yaml"},
+        {"label": "B*", "structure": "structures/b.yaml"},
+    ]
+    assert (tmp_path / "structures" / "a.yaml").exists()
+    assert (tmp_path / "structures" / "b.yaml").exists()
+
+
+def test_network2fnf_cli_structures_renames_duplicate_filenames(tmp_path):
+    states_1 = tmp_path / "states_1"
+    states_2 = tmp_path / "states_2"
+    states_1.mkdir()
+    states_2.mkdir()
+
+    (states_1 / "a.yaml").write_text(
+        """
+energy:
+  electronic: -1.0
+vibrations:
+  frequencies_cm-1: [100.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (states_2 / "a.yaml").write_text(
+        """
+energy:
+  electronic: -0.5
+vibrations:
+  frequencies_cm-1: [200.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "ts.yaml").write_text(
+        """
+energy:
+  electronic: 0.3
+vibrations:
+  frequencies_cm-1: [300.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: A1*
+    file: states_1/a.yaml
+  - name: A2*
+    file: states_2/a.yaml
+transition_states:
+  - name: TS
+    file: ts.yaml
+network:
+  - name: surf step
+    type: surf
+    reaction: A1* => A2*
+    forward:
+      ts:
+        - name: TS
+      is:
+        - name: A1*
+    backward:
+      ts:
+        - name: TS
+      is:
+        - name: A2*
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "fnf.yaml"
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["network2fnf", str(network_file), "-o", str(output), "--structures", "structures"],
+    )
+
+    assert result.exit_code == 0
+    payload = yaml.safe_load(output.read_text())
+
+    assert payload["nodes"] == [
+        {"label": "A1*", "structure": "structures/a__1.yaml"},
+        {"label": "A2*", "structure": "structures/a__2.yaml"},
+    ]
+    assert (tmp_path / "structures" / "a__1.yaml").exists()
+    assert (tmp_path / "structures" / "a__2.yaml").exists()
+
+
 def test_network2fnf_cli_prune_removes_matching_two_node_steps(tmp_path):
     states_dir = tmp_path / "states"
     states_dir.mkdir()

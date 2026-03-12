@@ -493,6 +493,7 @@ def build_fnf(
     unit: str = "ev",
     include_warnings: bool = False,
     split: bool = False,
+    node_structures: dict[str, str] | None = None,
 ) -> dict | tuple[dict, list[str]]:
     """Build a formatted-network-file (FNF) payload from a network YAML file."""
     network_path, network_data = _read_network_yaml(network_file)
@@ -505,11 +506,15 @@ def build_fnf(
         if state.get("name")
     }
 
-    nodes = [
-        {"label": state["name"]}
-        for state in stable_states
-        if str(state.get("type", "surf")) != "gas"
-    ]
+    nodes = []
+    for state in stable_states:
+        if str(state.get("type", "surf")) == "gas":
+            continue
+
+        node = {"label": state["name"]}
+        if node_structures and state["name"] in node_structures:
+            node["structure"] = node_structures[state["name"]]
+        nodes.append(node)
 
     edges: list[dict] = []
 

@@ -1,4 +1,6 @@
+from collections import Counter
 from pathlib import Path
+import shutil
 
 import click
 import yaml
@@ -127,6 +129,49 @@ def _print_prune_report(removed_edges: list[str], prune_nodes: set[str]) -> None
             console.print(f"  [yellow]-[/yellow] {edge}")
     else:
         console.print("[yellow]No elementary reaction steps matched --prune.[/yellow]")
+
+
+def _collect_node_structure_paths(network_file: str, output: str, structures_dir_name: str) -> dict[str, str]:
+    """Copy stable-state YAML files and return node->relative structure paths."""
+    network_path = Path(network_file).resolve()
+    output_path = Path(output).resolve()
+
+    with network_path.open("r", encoding="utf-8") as stream:
+        network_data = yaml.safe_load(stream) or {}
+
+    destination_dir = output_path.parent / structures_dir_name
+    destination_dir.mkdir(parents=True, exist_ok=True)
+
+    inventory: list[tuple[str, Path]] = []
+    for state in network_data.get("stable_states", []):
+        if str(state.get("type", "surf")) == "gas":
+            continue
+
+        state_name = state.get("name")
+        state_file = state.get("file")
+        if not state_name or not state_file:
+            continue
+
+        inventory.append((state_name, (network_path.parent / state_file).resolve()))
+
+    filename_counts = Counter(source_file.name for _, source_file in inventory)
+    duplicate_indices: dict[str, int] = {}
+
+    node_structures: dict[str, str] = {}
+    for state_name, source_file in inventory:
+        filename = source_file.name
+        if filename_counts[filename] > 1:
+            duplicate_indices[filename] = duplicate_indices.get(filename, 0) + 1
+            suffix_index = duplicate_indices[filename]
+            destination_name = f"{source_file.stem}__{suffix_index}{source_file.suffix}"
+        else:
+            destination_name = filename
+
+        destination_file = destination_dir / destination_name
+        shutil.copy2(source_file, destination_file)
+        node_structures[state_name] = str(destination_file.relative_to(output_path.parent))
+
+    return node_structures
 
 
 def _edge_node_key(edge: dict) -> tuple[str, ...]:
@@ -471,7 +516,15 @@ def build_ped_command(network_file, path_name, output_file):
         "Can be passed multiple times or as a comma-separated list."
     ),
 )
-def network2fnf_command(network_file, output, unit, merge, split, prune):
+@click.option(
+    "--structures",
+    type=click.Path(file_okay=False, dir_okay=True),
+    help=(
+        "Folder name created beside the output YAML. "
+        "Stable-state YAML files are copied there and referenced under each node as structure."
+    ),
+)
+def network2fnf_command(network_file, output, unit, merge, split, prune, structures):
     """Convert a network YAML definition to a formatted network file (FNF)."""
     _ensure_output_dir(output)
     output_path = Path(output)
@@ -481,11 +534,16 @@ def network2fnf_command(network_file, output, unit, merge, split, prune):
             f"Output file already exists: {output}. Use --merge to append new entries."
         )
 
+    node_structures = None
+    if structures:
+        node_structures = _collect_node_structure_paths(network_file, output, structures)
+
     fnf_payload, warning_steps = build_fnf(
         network_file,
         unit=unit,
         include_warnings=True,
         split=split,
+        node_structures=node_structures,
     )
     prune_nodes = _parse_prune_nodes(prune)
     fnf_payload, removed_edges = _prune_edges(fnf_payload, prune_nodes)
