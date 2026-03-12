@@ -308,6 +308,22 @@ def _compute_adsorption_heat(
     return electronic_heat, zpe_correction, total_heat, full_equation
 
 
+def _validate_surface_ts_consistency(step: dict) -> None:
+    """Validate that single-term forward/backward TS definitions match."""
+    step_name = step.get("name", "unnamed_step")
+    forward_ts = step.get("forward", {}).get("ts", [])
+    backward_ts = step.get("backward", {}).get("ts", [])
+
+    if len(forward_ts) == 1 and len(backward_ts) == 1:
+        forward_name = forward_ts[0].get("name")
+        backward_name = backward_ts[0].get("name")
+        if forward_name != backward_name:
+            raise ValueError(
+                f"Surface step '{step_name}' must use the same TS state in forward and backward "
+                f"when both define a single TS term; got '{forward_name}' and '{backward_name}'"
+            )
+
+
 def read_network(network_file: str | Path) -> list[ElementaryStep]:
     """Parse a network YAML file into evaluated elementary-step objects."""
     network_path, network_data = _read_network_yaml(network_file)
@@ -337,6 +353,7 @@ def read_network(network_file: str | Path) -> list[ElementaryStep]:
             reaction_heat_zpe = forward_zpe
             reaction_heat_total = forward_total
         else:
+            _validate_surface_ts_consistency(step)
             forward_data = step.get("forward", {})
             backward_data = step.get("backward", {})
 
@@ -450,6 +467,7 @@ def build_fnf(network_file: str | Path, *, unit: str = "ev") -> dict:
         }
 
         if step_type == "surf":
+            _validate_surface_ts_consistency(step)
             forward_data = step.get("forward", {})
             backward_data = step.get("backward", {})
 

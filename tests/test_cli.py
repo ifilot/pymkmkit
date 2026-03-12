@@ -2,10 +2,11 @@ import zipfile
 from pathlib import Path
 
 import yaml
+import pytest
 from click.testing import CliRunner
 
 from pymkmkit.cli import cli
-from pymkmkit.network_reader import _format_chemical_subscripts
+from pymkmkit.network_reader import _format_chemical_subscripts, read_network
 
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -1066,3 +1067,55 @@ network:
     assert ok_result.exit_code == 0
     payload = yaml.safe_load(output.read_text())
     assert payload["edges"][0]["nodes"] == ["A*", "B*"]
+
+def test_read_network_rejects_mismatched_single_transition_states(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    for name, energy in (("is.yaml", -1.0), ("fs.yaml", -2.0), ("ts_a.yaml", 0.0), ("ts_b.yaml", 0.2)):
+        (states_dir / name).write_text(
+            f"""
+energy:
+  electronic: {energy}
+vibrations:
+  frequencies_cm-1: []
+  paired_modes_averaged: true
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: IS*
+    file: states/is.yaml
+  - name: FS*
+    file: states/fs.yaml
+transition_states:
+  - name: TS_A
+    file: states/ts_a.yaml
+  - name: TS_B
+    file: states/ts_b.yaml
+network:
+  - name: mismatched ts step
+    type: surf
+    reaction: IS* => FS*
+    forward:
+      ts:
+        - name: TS_A
+      is:
+        - name: IS*
+    backward:
+      ts:
+        - name: TS_B
+      is:
+        - name: FS*
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="must use the same TS state"):
+        read_network(network_file)
