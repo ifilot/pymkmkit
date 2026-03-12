@@ -7,6 +7,7 @@ import re
 import yaml
 
 EV_PER_CM1 = 1.239841984e-4
+KJMOL_PER_EV = 96.48533212
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,23 @@ class ReactionPath:
 
     name: str
     total_reaction_energy: float
+
+
+def _convert_energy_unit(value_ev: float, unit: str) -> float:
+    """Convert an energy value from eV to a target unit."""
+    if unit == "kj/mol":
+        return value_ev * KJMOL_PER_EV
+    if unit != "ev":
+        raise ValueError(f"Unsupported energy unit '{unit}'.")
+    return value_ev
+
+
+def _read_network_yaml(network_file: str | Path) -> tuple[Path, dict]:
+    """Resolve and load a network YAML file."""
+    network_path = Path(network_file).resolve()
+    with network_path.open("r", encoding="utf-8") as stream:
+        network_data = yaml.safe_load(stream) or {}
+    return network_path, network_data
 
 
 def _resolve_state_file(base_dir: Path, state_file: str) -> Path:
@@ -292,10 +310,7 @@ def _compute_adsorption_heat(
 
 def read_network(network_file: str | Path) -> list[ElementaryStep]:
     """Parse a network YAML file into evaluated elementary-step objects."""
-    network_path = Path(network_file).resolve()
-
-    with network_path.open("r", encoding="utf-8") as stream:
-        network_data = yaml.safe_load(stream) or {}
+    network_path, network_data = _read_network_yaml(network_file)
 
     states = _load_states(network_data, network_path.parent)
 
@@ -365,9 +380,7 @@ def read_network(network_file: str | Path) -> list[ElementaryStep]:
 
 def evaluate_paths(network_file: str | Path) -> list[ReactionPath]:
     """Calculate net reaction energies for each named pathway in a network."""
-    network_path = Path(network_file).resolve()
-    with network_path.open("r", encoding="utf-8") as stream:
-        network_data = yaml.safe_load(stream) or {}
+    _, network_data = _read_network_yaml(network_file)
 
     steps = read_network(network_file)
     steps_by_name = {step.name: step for step in steps}
@@ -403,6 +416,89 @@ def evaluate_paths(network_file: str | Path) -> list[ReactionPath]:
         )
 
     return paths
+
+
+def build_fnf(network_file: str | Path, *, unit: str = "ev") -> dict:
+    """Build a formatted-network-file (FNF) payload from a network YAML file."""
+    network_path, network_data = _read_network_yaml(network_file)
+    states = _load_states(network_data, network_path.parent)
+
+    stable_states = network_data.get("stable_states", [])
+    state_phase: dict[str, str] = {
+        state.get("name", ""): str(state.get("type", "surf"))
+        for state in stable_states
+        if state.get("name")
+    }
+
+    nodes = [
+        {"label": state["name"]}
+        for state in stable_states
+        if str(state.get("type", "surf")) != "gas"
+    ]
+
+    edges: list[dict] = []
+    for step in network_data.get("network", []):
+        step_type = step.get("type", "surf")
+        if step_type not in {"surf", "ads"}:
+            raise ValueError(
+                f"Invalid network step type '{step_type}'. Expected 'surf' or 'ads'."
+            )
+
+        edge = {
+            "name": step.get("name", "unnamed_step"),
+            "type": step_type,
+        }
+
+        if step_type == "surf":
+            forward_data = step.get("forward", {})
+            backward_data = step.get("backward", {})
+
+            forward_is = forward_data.get("is", [])
+            backward_is = backward_data.get("is", [])
+            if len(forward_is) != 1 or len(backward_is) != 1:
+                raise ValueError(
+                    f"Surface step '{edge['name']}' only supports unimolecular is states"
+                )
+
+            _, _, forward_total, _ = _compute_barrier(forward_data, states)
+            _, _, backward_total, _ = _compute_barrier(backward_data, states)
+
+            edge["nodes"] = [forward_is[0]["name"], backward_is[0]["name"]]
+            edge["forward"] = float(_convert_energy_unit(forward_total, unit))
+            edge["backward"] = float(_convert_energy_unit(backward_total, unit))
+        else:
+            _, _, adsorption_total, _ = _compute_adsorption_heat(step, states)
+
+            is_names = [
+                term["name"]
+                for term in step.get("is", [])
+                if state_phase.get(term.get("name"), "surf") != "gas"
+            ]
+            fs_names = [
+                term["name"]
+                for term in step.get("fs", [])
+                if state_phase.get(term.get("name"), "surf") != "gas"
+            ]
+            filtered_nodes = list(dict.fromkeys(is_names + fs_names))
+            if len(filtered_nodes) != 2:
+                raise ValueError(
+                    f"Adsorption step '{edge['name']}' must map to exactly two surface nodes"
+                )
+
+            edge["nodes"] = filtered_nodes
+            edge["ads"] = float(_convert_energy_unit(adsorption_total, unit))
+
+        edges.append(edge)
+
+    return {
+        "pymkmkit": {
+            "version": "0.1.0",
+            "units": "kJ/mol" if unit == "kj/mol" else "eV",
+            "energy_type": "elec+zpe",
+        },
+        "nodes": nodes,
+        "edges": edges,
+    }
 
 
 def build_ped(

@@ -809,3 +809,260 @@ paths:
 
 def test_format_chemical_subscripts_only_subscripts_attached_digits():
     assert _format_chemical_subscripts("CO* + 3H2") == "CO* + 3H$_{2}$"
+
+
+def test_network2fnf_cli_writes_nodes_and_edges_ev(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    (states_dir / "a.yaml").write_text(
+        """
+energy:
+  electronic: -1.0
+vibrations:
+  frequencies_cm-1: [100.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (states_dir / "b.yaml").write_text(
+        """
+energy:
+  electronic: -0.5
+vibrations:
+  frequencies_cm-1: [200.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (states_dir / "ts.yaml").write_text(
+        """
+energy:
+  electronic: 0.3
+vibrations:
+  frequencies_cm-1: [300.0]
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: A*
+    file: states/a.yaml
+  - name: B*
+    file: states/b.yaml
+transition_states:
+  - name: TS
+    file: states/ts.yaml
+network:
+  - name: surf step
+    type: surf
+    reaction: A* => B*
+    forward:
+      ts:
+        - name: TS
+      is:
+        - name: A*
+    backward:
+      ts:
+        - name: TS
+      is:
+        - name: B*
+  - name: ads step
+    type: ads
+    reaction: A + * => A*
+    is:
+      - name: A*
+    fs:
+      - name: B*
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "fnf.yaml"
+    runner = CliRunner()
+    result = runner.invoke(cli, ["network2fnf", str(network_file), "-o", str(output)])
+
+    assert result.exit_code == 0
+    payload = yaml.safe_load(output.read_text())
+
+    assert payload["pymkmkit"]["units"] == "eV"
+    assert payload["pymkmkit"]["energy_type"] == "elec+zpe"
+    assert payload["nodes"] == [{"label": "A*"}, {"label": "B*"}]
+
+    surf_edge = payload["edges"][0]
+    assert surf_edge["type"] == "surf"
+    assert set(surf_edge) >= {"forward", "backward", "nodes"}
+
+    ads_edge = payload["edges"][1]
+    assert ads_edge["type"] == "ads"
+    assert "ads" in ads_edge
+    assert ads_edge["nodes"] == ["A*", "B*"]
+
+
+def test_network2fnf_cli_supports_kj_mol(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    (states_dir / "is.yaml").write_text(
+        """
+energy:
+  electronic: -1.0
+vibrations:
+  frequencies_cm-1: []
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (states_dir / "fs.yaml").write_text(
+        """
+energy:
+  electronic: 0.0
+vibrations:
+  frequencies_cm-1: []
+  paired_modes_averaged: true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: IS
+    file: states/is.yaml
+  - name: FS
+    file: states/fs.yaml
+network:
+  - name: ads step
+    type: ads
+    reaction: IS => FS
+    is:
+      - name: IS
+    fs:
+      - name: FS
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "fnf_kj.yaml"
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["network2fnf", str(network_file), "-o", str(output), "--unit", "kj/mol"],
+    )
+
+    assert result.exit_code == 0
+    payload = yaml.safe_load(output.read_text())
+    assert payload["pymkmkit"]["units"] == "kJ/mol"
+    assert payload["edges"][0]["ads"] == 96.48533212
+
+
+def test_network2fnf_cli_ignores_gas_and_blocks_bimolecular_surface_steps(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    for name, energy in (("a.yaml", -1.0), ("b.yaml", -0.5), ("c.yaml", -0.2), ("g.yaml", -0.1), ("ts.yaml", 0.4)):
+        (states_dir / name).write_text(
+            f"""
+energy:
+  electronic: {energy}
+vibrations:
+  frequencies_cm-1: []
+  paired_modes_averaged: true
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: A*
+    file: states/a.yaml
+    type: surf
+  - name: B*
+    file: states/b.yaml
+    type: surf
+  - name: C*
+    file: states/c.yaml
+    type: surf
+  - name: G
+    file: states/g.yaml
+    type: gas
+transition_states:
+  - name: TS
+    file: states/ts.yaml
+network:
+  - name: ads step
+    type: ads
+    reaction: G + A* => B*
+    is:
+      - name: G
+      - name: A*
+    fs:
+      - name: B*
+  - name: bimolecular surf
+    type: surf
+    reaction: A* + C* => B*
+    forward:
+      ts:
+        - name: TS
+      is:
+        - name: A*
+        - name: C*
+    backward:
+      ts:
+        - name: TS
+      is:
+        - name: B*
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "fnf.yaml"
+    runner = CliRunner()
+    result = runner.invoke(cli, ["network2fnf", str(network_file), "-o", str(output)])
+
+    assert result.exit_code != 0
+    assert "only supports unimolecular is states" in str(result.exception)
+
+    network_file.write_text(
+        network_file.read_text().replace(
+            """
+  - name: bimolecular surf
+    type: surf
+    reaction: A* + C* => B*
+    forward:
+      ts:
+        - name: TS
+      is:
+        - name: A*
+        - name: C*
+    backward:
+      ts:
+        - name: TS
+      is:
+        - name: B*
+""",
+            "",
+        ),
+        encoding="utf-8",
+    )
+
+    ok_result = runner.invoke(cli, ["network2fnf", str(network_file), "-o", str(output)])
+    assert ok_result.exit_code == 0
+    payload = yaml.safe_load(output.read_text())
+    assert payload["edges"][0]["nodes"] == ["A*", "B*"]

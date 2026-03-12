@@ -1,9 +1,10 @@
 from pathlib import Path
 
 import click
+import yaml
 from rich.console import Console
 
-from pymkmkit.network_reader import build_ped, evaluate_paths, read_network
+from pymkmkit.network_reader import build_fnf, build_ped, evaluate_paths, read_network
 from pymkmkit.vasp_freq import (
     parse_ase_vibrations,
     parse_vasp_frequency,
@@ -39,6 +40,12 @@ def _format_energy(value: float, *, unit: str) -> str:
         converted = value * 96.48533212
         return f"{converted:>8.1f} kJ/mol"
     return f"{value:>8.4f} eV"
+
+
+def _dump_yaml(data: dict, output_file: str) -> None:
+    """Write dictionary content to a YAML file."""
+    with Path(output_file).open("w", encoding="utf-8") as stream:
+        yaml.safe_dump(data, stream, sort_keys=False)
 
 
 # ---------------------------------------------------------------------------
@@ -245,3 +252,29 @@ def build_ped_command(network_file, path_name, output_file):
 
     if output_file:
         click.echo(f"Potential energy diagram written to: {output_file}")
+
+
+@cli.command("network2fnf")
+@click.argument(
+    "network_file",
+    type=click.Path(exists=True, dir_okay=False)
+)
+@click.option(
+    "-o", "--output",
+    required=True,
+    type=click.Path(dir_okay=False),
+    help="Output FNF YAML file (required)."
+)
+@click.option(
+    "--unit",
+    type=click.Choice(["ev", "kj/mol"], case_sensitive=False),
+    default="ev",
+    show_default=True,
+    help="Energy unit used for edge values.",
+)
+def network2fnf_command(network_file, output, unit):
+    """Convert a network YAML definition to a formatted network file (FNF)."""
+    _ensure_output_dir(output)
+    fnf_payload = build_fnf(network_file, unit=unit)
+    _dump_yaml(fnf_payload, output)
+    click.echo(f"YAML written to: {output}")
