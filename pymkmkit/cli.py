@@ -48,6 +48,87 @@ def _dump_yaml(data: dict, output_file: str) -> None:
         yaml.safe_dump(data, stream, sort_keys=False)
 
 
+def _dump_yaml_with_step_warnings(data: dict, output_file: str, warning_steps: list[str]) -> None:
+    """Write YAML and insert warning comments at warned elementary steps."""
+    yaml_text = yaml.safe_dump(data, sort_keys=False)
+    if warning_steps:
+        warning_set = set(warning_steps)
+        warning_suffix = " has more than two nodes. Remove this step or prune the number of nodes."
+        lines = yaml_text.splitlines()
+        commented_lines: list[str] = []
+        for line in lines:
+            stripped = line.lstrip()
+            if stripped.startswith("- name: "):
+                step_name = stripped.removeprefix("- name: ").strip()
+                if step_name in warning_set:
+                    indent = line[: len(line) - len(stripped)]
+                    commented_lines.append(
+                        f"{indent}# WARNING: Elementary reaction step '{step_name}'{warning_suffix}"
+                    )
+            commented_lines.append(line)
+        yaml_text = "\n".join(commented_lines) + "\n"
+
+    with Path(output_file).open("w", encoding="utf-8") as stream:
+        stream.write(yaml_text)
+
+
+def _print_network2fnf_warnings(warning_steps: list[str]) -> None:
+    """Print conversion warnings for elementary steps with more than two nodes."""
+    if not warning_steps:
+        return
+
+    console = Console()
+    console.print("[yellow]Warnings for elementary reaction steps:[/yellow]")
+    for step_name in warning_steps:
+        console.print(f"  [yellow]WARNING[/yellow] {step_name}")
+
+
+def _parse_prune_nodes(prune: tuple[str, ...]) -> set[str]:
+    """Parse --prune values into a normalized node-name set."""
+    parsed: set[str] = set()
+    for entry in prune:
+        for token in entry.split(","):
+            node = token.strip()
+            if node:
+                parsed.add(node)
+    return parsed
+
+
+def _prune_edges(payload: dict, prune_nodes: set[str]) -> tuple[dict, list[str]]:
+    """Remove 2-node edges that include any node listed in ``prune_nodes``."""
+    if not prune_nodes:
+        return payload, []
+
+    pruned_payload = dict(payload)
+    kept_edges: list[dict] = []
+    removed_descriptors: list[str] = []
+
+    for edge in payload.get("edges", []):
+        nodes = edge.get("nodes", [])
+        if isinstance(nodes, list) and len(nodes) == 2 and any(str(node) in prune_nodes for node in nodes):
+            edge_name = str(edge.get("name", "unnamed_step"))
+            removed_descriptors.append(f"{edge_name} ({nodes[0]} <-> {nodes[1]})")
+            continue
+        kept_edges.append(edge)
+
+    pruned_payload["edges"] = kept_edges
+    return pruned_payload, removed_descriptors
+
+
+def _print_prune_report(removed_edges: list[str], prune_nodes: set[str]) -> None:
+    """Print a report of elementary steps removed via --prune."""
+    if not prune_nodes:
+        return
+
+    console = Console()
+    if removed_edges:
+        console.print("[yellow]Removed elementary reaction steps via --prune:[/yellow]")
+        for edge in removed_edges:
+            console.print(f"  [yellow]-[/yellow] {edge}")
+    else:
+        console.print("[yellow]No elementary reaction steps matched --prune.[/yellow]")
+
+
 def _edge_node_key(edge: dict) -> tuple[str, ...]:
     """Return an order-insensitive edge key from its node labels."""
     nodes = edge.get("nodes", [])
@@ -374,7 +455,23 @@ def build_ped_command(network_file, path_name, output_file):
         "existing elementary steps are matched by the combination of nodes (order-insensitive)."
     ),
 )
-def network2fnf_command(network_file, output, unit, merge):
+@click.option(
+    "--split",
+    is_flag=True,
+    help=(
+        "Split 1↔2 elementary steps into two 2-node entries. "
+        "Steps that do not match this pattern still produce warnings."
+    ),
+)
+@click.option(
+    "--prune",
+    multiple=True,
+    help=(
+        "Prune nodes from 2-node elementary steps. "
+        "Can be passed multiple times or as a comma-separated list."
+    ),
+)
+def network2fnf_command(network_file, output, unit, merge, split, prune):
     """Convert a network YAML definition to a formatted network file (FNF)."""
     _ensure_output_dir(output)
     output_path = Path(output)
@@ -384,15 +481,25 @@ def network2fnf_command(network_file, output, unit, merge):
             f"Output file already exists: {output}. Use --merge to append new entries."
         )
 
-    fnf_payload = build_fnf(network_file, unit=unit)
+    fnf_payload, warning_steps = build_fnf(
+        network_file,
+        unit=unit,
+        include_warnings=True,
+        split=split,
+    )
+    prune_nodes = _parse_prune_nodes(prune)
+    fnf_payload, removed_edges = _prune_edges(fnf_payload, prune_nodes)
 
     if merge and output_path.exists():
         with output_path.open("r", encoding="utf-8") as stream:
             existing_payload = yaml.safe_load(stream) or {}
         merged_payload, report = _merge_fnf_payloads(existing_payload, fnf_payload)
-        _dump_yaml(merged_payload, output)
+        _dump_yaml_with_step_warnings(merged_payload, output, warning_steps)
         _print_merge_report(report)
     else:
-        _dump_yaml(fnf_payload, output)
+        _dump_yaml_with_step_warnings(fnf_payload, output, warning_steps)
+
+    _print_network2fnf_warnings(warning_steps)
+    _print_prune_report(removed_edges, prune_nodes)
 
     click.echo(f"YAML written to: {output}")

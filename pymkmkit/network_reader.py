@@ -487,7 +487,13 @@ def evaluate_paths(network_file: str | Path) -> list[ReactionPath]:
     return paths
 
 
-def build_fnf(network_file: str | Path, *, unit: str = "ev") -> dict:
+def build_fnf(
+    network_file: str | Path,
+    *,
+    unit: str = "ev",
+    include_warnings: bool = False,
+    split: bool = False,
+) -> dict | tuple[dict, list[str]]:
     """Build a formatted-network-file (FNF) payload from a network YAML file."""
     network_path, network_data = _read_network_yaml(network_file)
     states = _load_states(network_data, network_path.parent)
@@ -506,6 +512,18 @@ def build_fnf(network_file: str | Path, *, unit: str = "ev") -> dict:
     ]
 
     edges: list[dict] = []
+
+    def _split_edge_nodes(reactant_nodes: list[str], product_nodes: list[str]) -> list[list[str]] | None:
+        """Split supported 1<->2 node mappings into two 2-node entries."""
+        if len(reactant_nodes) == 1 and len(product_nodes) == 2:
+            reactant = reactant_nodes[0]
+            return [[reactant, product] for product in product_nodes]
+        if len(reactant_nodes) == 2 and len(product_nodes) == 1:
+            product = product_nodes[0]
+            return [[reactant, product] for reactant in reactant_nodes]
+        return None
+
+    warning_steps: list[str] = []
     for step in network_data.get("network", []):
         step_type = step.get("type", "surf")
         if step_type not in {"surf", "ads", "rearrangement"}:
@@ -525,48 +543,98 @@ def build_fnf(network_file: str | Path, *, unit: str = "ev") -> dict:
 
             forward_is = forward_data.get("is", [])
             backward_is = backward_data.get("is", [])
-            if len(forward_is) != 1 or len(backward_is) != 1:
+            reactant_nodes = list(dict.fromkeys(term["name"] for term in forward_is))
+            product_nodes = list(dict.fromkeys(term["name"] for term in backward_is))
+            edge_nodes = list(dict.fromkeys(reactant_nodes + product_nodes))
+            if len(edge_nodes) < 2:
                 raise ValueError(
-                    f"Surface step '{edge['name']}' only supports unimolecular is states"
+                    f"Surface step '{edge['name']}' must map to at least two nodes"
                 )
 
             _, _, forward_total, _ = _compute_barrier(forward_data, states)
             _, _, backward_total, _ = _compute_barrier(backward_data, states)
 
-            edge["nodes"] = [forward_is[0]["name"], backward_is[0]["name"]]
+            split_nodes = _split_edge_nodes(reactant_nodes, product_nodes) if split else None
+            if split_nodes:
+                for nodes_pair in split_nodes:
+                    edges.append(
+                        {
+                            **edge,
+                            "nodes": nodes_pair,
+                            "forward": float(_convert_energy_unit(forward_total, unit)),
+                            "backward": float(_convert_energy_unit(backward_total, unit)),
+                        }
+                    )
+                continue
+
+            if len(edge_nodes) > 2:
+                warning_steps.append(edge["name"])
+
+            edge["nodes"] = edge_nodes
             edge["forward"] = float(_convert_energy_unit(forward_total, unit))
             edge["backward"] = float(_convert_energy_unit(backward_total, unit))
         elif step_type == "ads":
             _, _, adsorption_total, _ = _compute_adsorption_heat(step, states)
 
-            is_names = [
+            is_names = list(dict.fromkeys(
                 term["name"]
                 for term in step.get("is", [])
                 if state_phase.get(term.get("name"), "surf") != "gas"
-            ]
-            fs_names = [
+            ))
+            fs_names = list(dict.fromkeys(
                 term["name"]
                 for term in step.get("fs", [])
                 if state_phase.get(term.get("name"), "surf") != "gas"
-            ]
+            ))
             filtered_nodes = list(dict.fromkeys(is_names + fs_names))
-            if len(filtered_nodes) != 2:
+            if len(filtered_nodes) < 2:
                 raise ValueError(
-                    f"Adsorption step '{edge['name']}' must map to exactly two surface nodes"
+                    f"Adsorption step '{edge['name']}' must map to at least two surface nodes"
                 )
+
+            split_nodes = _split_edge_nodes(is_names, fs_names) if split else None
+            if split_nodes:
+                for nodes_pair in split_nodes:
+                    edges.append(
+                        {
+                            **edge,
+                            "nodes": nodes_pair,
+                            "ads": float(_convert_energy_unit(adsorption_total, unit)),
+                        }
+                    )
+                continue
+
+            if len(filtered_nodes) > 2:
+                warning_steps.append(edge["name"])
 
             edge["nodes"] = filtered_nodes
             edge["ads"] = float(_convert_energy_unit(adsorption_total, unit))
         else:
             _, _, rearrangement_total, _ = _compute_rearrangement_energy(step, states)
 
-            is_names = [term["name"] for term in step.get("is", [])]
-            fs_names = [term["name"] for term in step.get("fs", [])]
+            is_names = list(dict.fromkeys(term["name"] for term in step.get("is", [])))
+            fs_names = list(dict.fromkeys(term["name"] for term in step.get("fs", [])))
             filtered_nodes = list(dict.fromkeys(is_names + fs_names))
-            if len(filtered_nodes) != 2:
+            if len(filtered_nodes) < 2:
                 raise ValueError(
-                    f"Rearrangement step '{edge['name']}' must map to exactly two nodes"
+                    f"Rearrangement step '{edge['name']}' must map to at least two nodes"
                 )
+
+            split_nodes = _split_edge_nodes(is_names, fs_names) if split else None
+            if split_nodes:
+                for nodes_pair in split_nodes:
+                    edges.append(
+                        {
+                            **edge,
+                            "nodes": nodes_pair,
+                            "forward": float(_convert_energy_unit(rearrangement_total, unit)),
+                            "backward": float(_convert_energy_unit(-rearrangement_total, unit)),
+                        }
+                    )
+                continue
+
+            if len(filtered_nodes) > 2:
+                warning_steps.append(edge["name"])
 
             edge["nodes"] = filtered_nodes
             edge["forward"] = float(_convert_energy_unit(rearrangement_total, unit))
@@ -574,7 +642,7 @@ def build_fnf(network_file: str | Path, *, unit: str = "ev") -> dict:
 
         edges.append(edge)
 
-    return {
+    payload = {
         "pymkmkit": {
             "version": "0.1.0",
             "units": "kJ/mol" if unit == "kj/mol" else "eV",
@@ -583,6 +651,10 @@ def build_fnf(network_file: str | Path, *, unit: str = "ev") -> dict:
         "nodes": nodes,
         "edges": edges,
     }
+
+    if include_warnings:
+        return payload, warning_steps
+    return payload
 
 
 def build_ped(

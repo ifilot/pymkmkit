@@ -908,6 +908,84 @@ network:
     assert ads_edge["nodes"] == ["A*", "B*"]
 
 
+def test_network2fnf_cli_prune_removes_matching_two_node_steps(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    for name, energy in (("a.yaml", -1.0), ("b.yaml", -0.5), ("c.yaml", -0.2), ("ts.yaml", 0.4)):
+        (states_dir / name).write_text(
+            f"""
+energy:
+  electronic: {energy}
+vibrations:
+  frequencies_cm-1: []
+  paired_modes_averaged: true
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: A*
+    file: states/a.yaml
+  - name: B*
+    file: states/b.yaml
+  - name: C*
+    file: states/c.yaml
+transition_states:
+  - name: TS
+    file: states/ts.yaml
+network:
+  - name: step ab
+    type: surf
+    reaction: A* => B*
+    forward:
+      ts:
+        - name: TS
+      is:
+        - name: A*
+    backward:
+      ts:
+        - name: TS
+      is:
+        - name: B*
+  - name: step bc
+    type: surf
+    reaction: B* => C*
+    forward:
+      ts:
+        - name: TS
+      is:
+        - name: B*
+    backward:
+      ts:
+        - name: TS
+      is:
+        - name: C*
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "fnf.yaml"
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["network2fnf", str(network_file), "-o", str(output), "--prune", "B*"],
+    )
+
+    assert result.exit_code == 0
+    assert "Removed elementary reaction steps via --prune" in result.output
+    assert "step ab (A* <-> B*)" in result.output
+    assert "step bc (B* <-> C*)" in result.output
+
+    payload = yaml.safe_load(output.read_text())
+    assert payload["edges"] == []
+
+
 def test_network2fnf_cli_supports_kj_mol(tmp_path):
     states_dir = tmp_path / "states"
     states_dir.mkdir()
@@ -969,7 +1047,7 @@ network:
     assert payload["edges"][0]["ads"] == 96.48533212
 
 
-def test_network2fnf_cli_ignores_gas_and_blocks_bimolecular_surface_steps(tmp_path):
+def test_network2fnf_cli_ignores_gas_and_warns_for_multinode_steps(tmp_path):
     states_dir = tmp_path / "states"
     states_dir.mkdir()
 
@@ -1037,12 +1115,56 @@ network:
     runner = CliRunner()
     result = runner.invoke(cli, ["network2fnf", str(network_file), "-o", str(output)])
 
-    assert result.exit_code != 0
-    assert "only supports unimolecular is states" in str(result.exception)
+    assert result.exit_code == 0
+    assert "WARNING" in result.output
+    assert "bimolecular surf" in result.output
+    payload = yaml.safe_load(output.read_text())
+    assert payload["edges"][0]["nodes"] == ["A*", "B*"]
+    output_lines = output.read_text().splitlines()
+    warning_lines = [line.strip() for line in output_lines if "# WARNING:" in line]
+    assert warning_lines == [
+        "# WARNING: Elementary reaction step 'bimolecular surf' has more than two nodes. "
+        "Remove this step or prune the number of nodes."
+    ]
+    warning_idx = next(i for i, line in enumerate(output_lines) if "# WARNING:" in line)
+    step_idx = next(i for i, line in enumerate(output_lines) if "- name: bimolecular surf" in line)
+    assert warning_idx == step_idx - 1
 
+
+def test_network2fnf_cli_split_splits_supported_multinode_steps(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    for name, energy in (("a.yaml", -1.0), ("b.yaml", -0.5), ("c.yaml", -0.2), ("ts.yaml", 0.4)):
+        (states_dir / name).write_text(
+            f"""
+energy:
+  electronic: {energy}
+vibrations:
+  frequencies_cm-1: []
+  paired_modes_averaged: true
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+    network_file = tmp_path / "network.yaml"
     network_file.write_text(
-        network_file.read_text().replace(
-            """
+        """
+stable_states:
+  - name: A*
+    file: states/a.yaml
+    type: surf
+  - name: B*
+    file: states/b.yaml
+    type: surf
+  - name: C*
+    file: states/c.yaml
+    type: surf
+transition_states:
+  - name: TS
+    file: states/ts.yaml
+network:
   - name: bimolecular surf
     type: surf
     reaction: A* + C* => B*
@@ -1057,16 +1179,92 @@ network:
         - name: TS
       is:
         - name: B*
-""",
-            "",
-        ),
+""".strip()
+        + "\n",
         encoding="utf-8",
     )
 
-    ok_result = runner.invoke(cli, ["network2fnf", str(network_file), "-o", str(output)])
-    assert ok_result.exit_code == 0
+    output = tmp_path / "fnf.yaml"
+    runner = CliRunner()
+    result = runner.invoke(cli, ["network2fnf", str(network_file), "-o", str(output), "--split"])
+
+    assert result.exit_code == 0
+    assert "WARNING" not in result.output
     payload = yaml.safe_load(output.read_text())
-    assert payload["edges"][0]["nodes"] == ["A*", "B*"]
+    split_edges = [edge for edge in payload["edges"] if edge["name"] == "bimolecular surf"]
+    assert len(split_edges) == 2
+    assert split_edges[0]["nodes"] == ["A*", "B*"]
+    assert split_edges[1]["nodes"] == ["C*", "B*"]
+    assert "# WARNING:" not in output.read_text()
+
+
+def test_network2fnf_cli_split_still_warns_for_unsupported_multinode_steps(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    for name, energy in (("a.yaml", -1.0), ("b.yaml", -0.5), ("c.yaml", -0.2), ("d.yaml", -0.1), ("ts.yaml", 0.4)):
+        (states_dir / name).write_text(
+            f"""
+energy:
+  electronic: {energy}
+vibrations:
+  frequencies_cm-1: []
+  paired_modes_averaged: true
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: A*
+    file: states/a.yaml
+    type: surf
+  - name: B*
+    file: states/b.yaml
+    type: surf
+  - name: C*
+    file: states/c.yaml
+    type: surf
+  - name: D*
+    file: states/d.yaml
+    type: surf
+transition_states:
+  - name: TS
+    file: states/ts.yaml
+network:
+  - name: unsupported multinode surf
+    type: surf
+    reaction: A* + C* => B* + D*
+    forward:
+      ts:
+        - name: TS
+      is:
+        - name: A*
+        - name: C*
+    backward:
+      ts:
+        - name: TS
+      is:
+        - name: B*
+        - name: D*
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "fnf.yaml"
+    runner = CliRunner()
+    result = runner.invoke(cli, ["network2fnf", str(network_file), "-o", str(output), "--split"])
+
+    assert result.exit_code == 0
+    assert "WARNING" in result.output
+    assert "unsupported multinode surf" in result.output
+    payload = yaml.safe_load(output.read_text())
+    assert payload["edges"][0]["nodes"] == ["A*", "C*", "B*", "D*"]
+    assert "# WARNING:" in output.read_text()
 
 def test_read_network_rejects_mismatched_single_transition_states(tmp_path):
     states_dir = tmp_path / "states"
