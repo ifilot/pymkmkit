@@ -244,3 +244,16 @@ def test_parse_frequency_reconstructs_hessian_from_modes_when_block_missing(tmp_
     assert len(partial["dof_labels"]) == 9
     assert len(partial["matrix"]) == 9
     assert all(len(row) == 9 for row in partial["matrix"])
+
+
+def test_parse_frequency_uses_second_derivatives_not_mass_weighted(tmp_path):
+    outcar = _extract_outcar("OUTCAR_Ru1121_CO.zip", tmp_path)
+
+    data = parse_vasp_frequency(outcar)
+    partial = data["vibrations"]["partial_hessian"]
+
+    assert partial["dof_labels"][:3] == ["49X", "49Y", "49Z"]
+    # Value from the SECOND DERIVATIVES (NOT SYMMETRIZED) block.
+    assert partial["matrix"][0][0] == pytest.approx(18.982092, abs=1e-6)
+    # This would be ~1.580392 if MASS-WEIGHTED SECOND DERIVATIVES were parsed.
+    assert partial["matrix"][0][0] != pytest.approx(1.580392, abs=1e-6)

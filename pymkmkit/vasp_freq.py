@@ -346,6 +346,13 @@ def extract_perturbed_hessian(text):
     while i < len(lines):
         line = lines[i]
 
+        if (
+            i > start
+            and "SECOND DERIVATIVES" in line
+            and "NOT SYMMETRIZED" not in line
+        ):
+            break
+
         if "Eigenvectors and eigenvalues of the dynamical matrix" in line:
             break
 
