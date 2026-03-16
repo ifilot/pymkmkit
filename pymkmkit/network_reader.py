@@ -362,6 +362,20 @@ def _validate_surface_ts_consistency(step: dict) -> None:
             )
 
 
+def _extract_shared_surface_ts_name(step: dict) -> str | None:
+    """Return the TS name that appears in both forward/backward ``ts`` entries."""
+    forward_ts = step.get("forward", {}).get("ts", [])
+    backward_ts = step.get("backward", {}).get("ts", [])
+
+    forward_names = {term.get("name") for term in forward_ts if term.get("name")}
+    backward_names = {term.get("name") for term in backward_ts if term.get("name")}
+    shared_names = forward_names.intersection(backward_names)
+
+    if len(shared_names) != 1:
+        return None
+    return next(iter(shared_names))
+
+
 def read_network(network_file: str | Path) -> list[ElementaryStep]:
     """Parse a network YAML file into evaluated elementary-step objects."""
     network_path, network_data = _read_network_yaml(network_file)
@@ -494,6 +508,7 @@ def build_fnf(
     include_warnings: bool = False,
     split: bool = False,
     node_structures: dict[str, str] | None = None,
+    transition_structures: dict[str, str] | None = None,
 ) -> dict | tuple[dict, list[str]]:
     """Build a formatted-network-file (FNF) payload from a network YAML file."""
     network_path, network_data = _read_network_yaml(network_file)
@@ -545,6 +560,7 @@ def build_fnf(
             _validate_surface_ts_consistency(step)
             forward_data = step.get("forward", {})
             backward_data = step.get("backward", {})
+            shared_ts_name = _extract_shared_surface_ts_name(step)
 
             forward_is = forward_data.get("is", [])
             backward_is = backward_data.get("is", [])
@@ -562,13 +578,20 @@ def build_fnf(
             split_nodes = _split_edge_nodes(reactant_nodes, product_nodes) if split else None
             if split_nodes:
                 for nodes_pair in split_nodes:
+                    split_edge = {
+                        **edge,
+                        "nodes": nodes_pair,
+                        "forward": float(_convert_energy_unit(forward_total, unit)),
+                        "backward": float(_convert_energy_unit(backward_total, unit)),
+                    }
+                    if (
+                        transition_structures
+                        and shared_ts_name
+                        and shared_ts_name in transition_structures
+                    ):
+                        split_edge["structure"] = transition_structures[shared_ts_name]
                     edges.append(
-                        {
-                            **edge,
-                            "nodes": nodes_pair,
-                            "forward": float(_convert_energy_unit(forward_total, unit)),
-                            "backward": float(_convert_energy_unit(backward_total, unit)),
-                        }
+                        split_edge
                     )
                 continue
 
@@ -578,6 +601,12 @@ def build_fnf(
             edge["nodes"] = edge_nodes
             edge["forward"] = float(_convert_energy_unit(forward_total, unit))
             edge["backward"] = float(_convert_energy_unit(backward_total, unit))
+            if (
+                transition_structures
+                and shared_ts_name
+                and shared_ts_name in transition_structures
+            ):
+                edge["structure"] = transition_structures[shared_ts_name]
         elif step_type == "ads":
             _, _, adsorption_total, _ = _compute_adsorption_heat(step, states)
 

@@ -908,7 +908,7 @@ network:
     assert ads_edge["nodes"] == ["A*", "B*"]
 
 
-def test_network2fnf_cli_structures_copies_yaml_and_sets_node_structure_paths(tmp_path):
+def test_network2fnf_cli_structures_copies_yaml_and_sets_node_and_edge_structure_paths(tmp_path):
     states_dir = tmp_path / "states"
     states_dir.mkdir()
 
@@ -990,8 +990,19 @@ network:
         {"label": "A*", "structure": "structures/a.yaml"},
         {"label": "B*", "structure": "structures/b.yaml"},
     ]
+    assert payload["edges"] == [
+        {
+            "name": "surf step",
+            "type": "surf",
+            "nodes": ["A*", "B*"],
+            "forward": pytest.approx(1.31239841984),
+            "backward": pytest.approx(0.80619920992),
+            "structure": "structures/ts.yaml",
+        }
+    ]
     assert (tmp_path / "structures" / "a.yaml").exists()
     assert (tmp_path / "structures" / "b.yaml").exists()
+    assert (tmp_path / "structures" / "ts.yaml").exists()
 
 
 def test_network2fnf_cli_structures_renames_duplicate_filenames(tmp_path):
@@ -1825,3 +1836,83 @@ edges:
     payload = yaml.safe_load(output.read_text())
     assert payload["nodes"] == [{"label": "A*"}, {"label": "B*"}, {"label": "C*"}]
     assert [edge["name"] for edge in payload["edges"]] == ["existing AB", "add me"]
+
+
+def test_network2fnf_cli_structures_sets_edge_structure_from_shared_forward_backward_ts(tmp_path):
+    states_dir = tmp_path / "states"
+    states_dir.mkdir()
+
+    for name, energy in (
+        ("oh.yaml", -1.0),
+        ("h.yaml", -0.3),
+        ("h2o.yaml", -1.5),
+        ("empty.yaml", 0.0),
+        ("oh_hydr.yaml", 0.7),
+    ):
+        (states_dir / name).write_text(
+            f"""
+energy:
+  electronic: {energy}
+vibrations:
+  frequencies_cm-1: [100.0]
+  paired_modes_averaged: true
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+    network_file = tmp_path / "network.yaml"
+    network_file.write_text(
+        """
+stable_states:
+  - name: OH*
+    file: states/oh.yaml
+  - name: H*
+    file: states/h.yaml
+  - name: H2O*
+    file: states/h2o.yaml
+transition_states:
+  - name: OH_hydr
+    file: states/oh_hydr.yaml
+  - name: empty
+    file: states/empty.yaml
+network:
+  - name: OH hydrogenation
+    type: surf
+    reaction: OH* + H* => H2O* + *
+    forward:
+      ts:
+        - name: OH_hydr
+          stoichiometry: 1
+        - name: empty
+          stoichiometry: 1
+      is:
+        - name: OH*
+          stoichiometry: 1
+        - name: H*
+          stoichiometry: 1
+      normalization: 2
+    backward:
+      ts:
+        - name: OH_hydr
+          stoichiometry: 1
+      is:
+        - name: H2O*
+          stoichiometry: 1
+      normalization: 2
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "fnf.yaml"
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["network2fnf", str(network_file), "-o", str(output), "--structures", "structures"],
+    )
+
+    assert result.exit_code == 0
+    payload = yaml.safe_load(output.read_text())
+
+    assert payload["edges"][0]["structure"] == "structures/oh_hydr.yaml"

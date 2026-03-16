@@ -384,7 +384,7 @@ def extract_perturbed_hessian(text):
         return None, None
 
     matrix = [
-        [values[row][col] for col in row_order]
+        [-values[row][col] for col in row_order]
         for row in row_order
     ]
     return row_order, matrix
@@ -468,7 +468,7 @@ def extract_hessian_from_dynamical_modes(text, atoms):
     dof_labels = [f"{i + 1}{axis}" for i in range(n_atoms) for axis in "XYZ"]
     masses = np.repeat(atoms.get_masses(), 3)
     mass_factor = np.sqrt(np.outer(masses, masses))
-    hessian = -dynamical * mass_factor
+    hessian = dynamical * mass_factor
     hessian = 0.5 * (hessian + hessian.T)
 
     return dof_labels, hessian.tolist()
@@ -486,7 +486,7 @@ def _split_frequencies_from_partial_hessian(dof_labels, hessian_matrix, atoms, t
 
     hessian = np.array(hessian_matrix, dtype=float)
     mass = np.sqrt(np.outer(dof_masses, dof_masses))
-    dynamical = -hessian / mass
+    dynamical = hessian / mass
     eigenvals = np.linalg.eigvalsh(dynamical)
 
     # Conversion: sqrt(eV/amu)/Ang -> cm-1
@@ -597,13 +597,11 @@ def extract_ase_vibration_hessian(outcar_path, delta=0.01):
             if signed_forces is None:
                 raise ValueError(f"Missing displacement data for {idx}{axis}")
 
-            # ASE caches store forces, while pymkmkit downstream assumes the
-            # VASP partial-Hessian sign convention used by
-            # ``frequencies_from_partial_hessian`` (which applies a leading
-            # minus sign before mass-weighting). Therefore we build rows as
-            # (F+ - F-) / (2*delta), i.e. the negative of ASE's internal H.
+            # ASE caches store forces, so central finite differences give
+            # dF/dx = (F+ - F-) / (2*delta). The Hessian is the negative of
+            # this force-derivative matrix, so we flip the sign here.
             derivative = (signed_forces["+"] - signed_forces["-"]) / (2.0 * delta)
-            rows.append(derivative[selected_atoms].reshape(-1))
+            rows.append((-derivative[selected_atoms]).reshape(-1))
 
     hessian = np.array(rows, dtype=float)
     hessian = 0.5 * (hessian + hessian.T)
