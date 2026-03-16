@@ -3,6 +3,7 @@ from pathlib import Path
 import shutil
 
 import click
+import numpy as np
 import yaml
 from rich.console import Console
 
@@ -48,6 +49,24 @@ def _dump_yaml(data: dict, output_file: str) -> None:
     """Write dictionary content to a YAML file."""
     with Path(output_file).open("w", encoding="utf-8") as stream:
         yaml.safe_dump(data, stream, sort_keys=False)
+
+
+def _should_flip_hessian_sign(eigenvalues: np.ndarray, vibrations: dict | None, tol: float = 1e-8) -> bool:
+    """Return ``True`` when Hessian signs appear inverted.
+
+    Decision rules:
+    - If imaginary frequencies are explicitly present, keep sign as-is.
+    - If no imaginary frequencies are present, flip when negative eigenvalues dominate.
+    - Without frequency metadata, use the same negative-dominance heuristic.
+    """
+    vibrations = vibrations or {}
+    imag_freqs = vibrations.get("imaginary_cm-1")
+    if isinstance(imag_freqs, list) and len(imag_freqs) > 0:
+        return False
+
+    negative = int(np.count_nonzero(eigenvalues < -tol))
+    positive = int(np.count_nonzero(eigenvalues > tol))
+    return negative > positive
 
 
 def _dump_yaml_with_step_warnings(data: dict, output_file: str, warning_steps: list[str]) -> None:
@@ -337,6 +356,57 @@ def freq2yaml(outcar, output, average_pairs):
 
     if average_pairs:
         click.echo("Sequential mode pairs averaged.")
+
+
+
+
+@cli.command("checkhessian")
+@click.argument(
+    "input_yaml",
+    type=click.Path(exists=True, dir_okay=False)
+)
+@click.option(
+    "-o", "--output",
+    required=True,
+    type=click.Path(dir_okay=False),
+    help="Output YAML file (required)."
+)
+def checkhessian(input_yaml, output):
+    """Check partial Hessian sign using eigenvalues and flip if needed."""
+
+    _ensure_output_dir(output)
+
+    input_text = Path(input_yaml).read_text(encoding="utf-8")
+    data = yaml.safe_load(input_text) or {}
+
+    partial = ((data.get("vibrations") or {}).get("partial_hessian") or {})
+    dof_labels = partial.get("dof_labels")
+    matrix = partial.get("matrix")
+
+    if not dof_labels or not matrix:
+        raise click.ClickException("Input YAML has no vibrations.partial_hessian block.")
+
+    hessian = np.array(matrix, dtype=float)
+    if hessian.ndim != 2 or hessian.shape[0] != hessian.shape[1]:
+        raise click.ClickException("Hessian matrix must be square.")
+
+    eigenvalues = np.linalg.eigvalsh(0.5 * (hessian + hessian.T))
+    flip = _should_flip_hessian_sign(eigenvalues, data.get("vibrations"))
+
+    if flip:
+        hessian = -hessian
+        data["vibrations"]["partial_hessian"]["matrix"] = hessian.tolist()
+        _dump_yaml(data, output)
+    else:
+        Path(output).write_text(input_text, encoding="utf-8")
+
+    eig_text = ", ".join(f"{value:.6f}" for value in eigenvalues)
+    click.echo(f"Hessian eigenvalues: [{eig_text}]")
+    if flip:
+        click.echo("Sign check: wrong sign detected (negative eigenvalues dominate). Flipped Hessian matrix.")
+    else:
+        click.echo("Sign check: Hessian sign is consistent. No sign flip needed.")
+    click.echo(f"YAML written to: {output}")
 
 
 @cli.command("opt2yaml")

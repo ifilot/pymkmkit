@@ -1916,3 +1916,102 @@ network:
     payload = yaml.safe_load(output.read_text())
 
     assert payload["edges"][0]["structure"] == "structures/oh_hydr.yaml"
+
+
+
+
+def test_checkhessian_cli_preserves_original_yaml_text_when_no_flip_needed(tmp_path):
+    input_yaml = tmp_path / "in.yaml"
+    output_yaml = tmp_path / "out.yaml"
+    original = """
+pymkmkit:
+  version: 0.1.0
+structure:
+  lattice_vectors:
+  - [8.282994, -4.306875, 0.0]
+  - [0.0, 10.1183, 0.0]
+  - [0.0, 0.0, 22.0694]
+vibrations:
+  frequencies_cm-1: [530.4, 508.4, 355.9]
+  partial_hessian:
+    dof_labels: [49X, 49Y, 49Z, 50X, 50Y, 50Z]
+    matrix:
+      - [11.028369, 0.476227, 1.571812, 0.009702, -0.016878, 0.015082]
+      - [0.471404, 11.996908, -0.196398, -0.008667, 0.029319, -0.007914]
+      - [1.588191, -0.277289, 6.069597, 0.005006, -0.018083, -0.021776]
+      - [0.004455, -0.018706, 0.081196, 11.30584, 0.341375, 1.388921]
+      - [-0.008089, 0.019896, -0.001058, 0.336609, 12.542438, -0.561785]
+      - [0.007441, -0.025501, -0.02044, 1.324243, 0.032636, 5.942638]
+""".lstrip()
+    input_yaml.write_text(original, encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["checkhessian", str(input_yaml), "-o", str(output_yaml)])
+
+    assert result.exit_code == 0
+    assert "No sign flip needed" in result.output
+    assert output_yaml.read_text(encoding="utf-8") == original
+def test_checkhessian_cli_flips_when_negative_eigenvalues_dominate(tmp_path):
+    input_yaml = tmp_path / "in.yaml"
+    output_yaml = tmp_path / "out.yaml"
+    input_yaml.write_text(
+        """
+vibrations:
+  frequencies_cm-1: [530.4, 508.4, 355.9]
+  partial_hessian:
+    dof_labels: [49X, 49Y, 49Z, 50X, 50Y, 50Z]
+    matrix:
+      - [-11.028369, -0.476227, -1.571812, -0.009702, 0.016878, -0.015082]
+      - [-0.471404, -11.996908, 0.196398, 0.008667, -0.029319, 0.007914]
+      - [-1.588191, 0.277289, -6.069597, -0.005006, 0.018083, 0.021776]
+      - [-0.004455, 0.018706, -0.081196, -11.30584, -0.341375, -1.388921]
+      - [0.008089, -0.019896, 0.001058, -0.336609, -12.542438, 0.561785]
+      - [-0.007441, 0.025501, 0.02044, -1.324243, -0.032636, -5.942638]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["checkhessian", str(input_yaml), "-o", str(output_yaml)])
+
+    assert result.exit_code == 0
+    assert "wrong sign detected" in result.output
+
+    parsed = yaml.safe_load(output_yaml.read_text())
+    row0 = parsed["vibrations"]["partial_hessian"]["matrix"][0]
+    assert row0[0] == pytest.approx(11.028369)
+    assert row0[1] == pytest.approx(0.476227)
+
+
+def test_checkhessian_cli_keeps_when_sign_already_correct(tmp_path):
+    input_yaml = tmp_path / "in.yaml"
+    output_yaml = tmp_path / "out.yaml"
+    input_yaml.write_text(
+        """
+vibrations:
+  frequencies_cm-1: [530.4, 508.4, 355.9]
+  partial_hessian:
+    dof_labels: [49X, 49Y, 49Z, 50X, 50Y, 50Z]
+    matrix:
+      - [11.028369, 0.476227, 1.571812, 0.009702, -0.016878, 0.015082]
+      - [0.471404, 11.996908, -0.196398, -0.008667, 0.029319, -0.007914]
+      - [1.588191, -0.277289, 6.069597, 0.005006, -0.018083, -0.021776]
+      - [0.004455, -0.018706, 0.081196, 11.30584, 0.341375, 1.388921]
+      - [-0.008089, 0.019896, -0.001058, 0.336609, 12.542438, -0.561785]
+      - [0.007441, -0.025501, -0.02044, 1.324243, 0.032636, 5.942638]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["checkhessian", str(input_yaml), "-o", str(output_yaml)])
+
+    assert result.exit_code == 0
+    assert "No sign flip needed" in result.output
+
+    parsed = yaml.safe_load(output_yaml.read_text())
+    row0 = parsed["vibrations"]["partial_hessian"]["matrix"][0]
+    assert row0[0] == pytest.approx(11.028369)
+    assert row0[1] == pytest.approx(0.476227)
